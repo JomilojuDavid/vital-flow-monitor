@@ -438,7 +438,7 @@ function Dashboard() {
               bed={b}
               onMute={() => toggleMute(b.id)}
               onRefill={() => markRefilled(b.id)}
-              onOpen={() => setOpenBed(b)}
+              onOpen={() => setOpenBedId(b)}
             />
           ))}
         </div>
@@ -497,7 +497,7 @@ function Dashboard() {
 
       {/* Bed detail modal */}
       {openBed && (
-        <BedDetailModal bed={openBed} onClose={() => setOpenBed(null)} />
+        <BedDetailModal bed={openBed} onClose={() => setOpenBedId(null)} />
       )}
     </div>
   );
