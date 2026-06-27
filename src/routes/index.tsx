@@ -402,6 +402,14 @@ function Dashboard() {
 
           <div className="flex items-center gap-2 sm:gap-3">
             <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="inline-flex items-center justify-center rounded-md border border-border bg-surface p-2 hover:bg-secondary"
+              aria-label="Toggle theme"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <button
               onClick={() => setShowLogs(true)}
               className="relative inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-xs font-medium hover:bg-secondary"
             >
@@ -424,7 +432,44 @@ function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Tabs */}
+        <div className="mx-auto flex max-w-[1600px] items-center gap-1 px-4 sm:px-6">
+          <TabButton active={tab === "monitoring"} onClick={() => setTab("monitoring")} icon={<Activity className="h-3.5 w-3.5" />}>
+            Live Monitoring
+          </TabButton>
+          <TabButton active={tab === "patients"} onClick={() => setTab("patients")} icon={<Users className="h-3.5 w-3.5" />}>
+            Patient Records
+            <span className="ml-1 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground tabular-nums">
+              {patients.length}
+            </span>
+          </TabButton>
+        </div>
       </header>
+
+      {tab === "monitoring" ? (
+        <MonitoringView
+          enriched={enriched}
+          criticalBeds={criticalBeds}
+          stableCount={stableCount}
+          avgRefill={avgRefill}
+          onMute={toggleMute}
+          onRefill={markRefilled}
+          onOpen={(id) => setOpenBedId(id)}
+        />
+      ) : (
+        <PatientsView
+          patients={patients}
+          beds={beds}
+          onAdd={(p) =>
+            setPatients((prev) => [
+              { ...p, id: `P-${1000 + prev.length + 1}`, admittedAt: new Date() },
+              ...prev,
+            ])
+          }
+          onRemove={(id) => setPatients((prev) => prev.filter((p) => p.id !== id))}
+        />
+      )}
 
       {/* KPI row */}
       <section className="mx-auto max-w-[1600px] px-4 pt-5 sm:px-6">
