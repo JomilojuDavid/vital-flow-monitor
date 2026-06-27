@@ -12,10 +12,15 @@ import {
   Droplets,
   Gauge,
   History,
+  Moon,
   Pause,
   Play,
+  Plus,
   ShieldCheck,
+  Sun,
+  Trash2,
   User2,
+  Users,
   X,
 } from "lucide-react";
 import {
