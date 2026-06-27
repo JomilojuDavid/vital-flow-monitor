@@ -159,7 +159,8 @@ function Dashboard() {
   const [simSpeed, setSimSpeed] = useState(2); // 1x, 2x, 5x
   const [logs, setLogs] = useState<AlertLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
-  const [openBed, setOpenBed] = useState<Bed | null>(null);
+  const [openBedId, setOpenBedId] = useState<string | null>(null);
+  const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
   const [dismissedBanner, setDismissedBanner] = useState<Set<string>>(new Set());
 
   // clock
