@@ -438,7 +438,7 @@ function Dashboard() {
               bed={b}
               onMute={() => toggleMute(b.id)}
               onRefill={() => markRefilled(b.id)}
-              onOpen={() => setOpenBedId(b)}
+              onOpen={() => setOpenBedId(b.id)}
             />
           ))}
         </div>
