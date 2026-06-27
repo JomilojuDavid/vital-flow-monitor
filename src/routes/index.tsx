@@ -195,6 +195,7 @@ function Dashboard() {
       }),
     [beds]
   );
+  const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
 
   const criticalBeds = enriched.filter((b) => b.status === "critical");
   const stableCount = enriched.filter((b) => b.status === "stable").length;
