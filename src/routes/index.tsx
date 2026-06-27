@@ -471,60 +471,6 @@ function Dashboard() {
         />
       )}
 
-      {/* KPI row */}
-      <section className="mx-auto max-w-[1600px] px-4 pt-5 sm:px-6">
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <KpiCard
-            icon={<ShieldCheck className="h-4 w-4" />}
-            label="Total Active Beds"
-            value={String(enriched.length)}
-            sub="6 of 6 monitored"
-            tone="default"
-          />
-          <KpiCard
-            icon={<AlertTriangle className="h-4 w-4" />}
-            label="Critical Replacements"
-            value={String(criticalBeds.length)}
-            sub={criticalBeds.length > 0 ? `${criticalBeds.map((b) => b.id.split(" ")[1]).join(", ")} need refill` : "All clear"}
-            tone={criticalBeds.length > 0 ? "critical" : "default"}
-          />
-          <KpiCard
-            icon={<CheckCircle2 className="h-4 w-4" />}
-            label="Stable Patients"
-            value={String(stableCount)}
-            sub="Fluid level above 30%"
-            tone="stable"
-          />
-          <KpiCard
-            icon={<Gauge className="h-4 w-4" />}
-            label="Avg. Time to Refill"
-            value={`${avgRefill} min`}
-            sub="Across all active beds"
-            tone="default"
-          />
-        </div>
-      </section>
-
-      {/* Grid */}
-      <section className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Patient Bed Monitoring
-          </h2>
-          <p className="text-[11px] text-muted-foreground">Click any card for fluid consumption history</p>
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {enriched.map((b) => (
-            <BedCard
-              key={b.id}
-              bed={b}
-              onMute={() => toggleMute(b.id)}
-              onRefill={() => markRefilled(b.id)}
-              onOpen={() => setOpenBedId(b.id)}
-            />
-          ))}
-        </div>
-      </section>
 
       {/* Simulation panel (floating) */}
       <SimulationPanel
