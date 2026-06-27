@@ -937,3 +937,280 @@ function MiniStat({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+// ---------- Tab Button ----------
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition ${
+        active
+          ? "border-primary text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
+// ---------- Monitoring View ----------
+
+function MonitoringView({
+  enriched,
+  criticalBeds,
+  stableCount,
+  avgRefill,
+  onMute,
+  onRefill,
+  onOpen,
+}: {
+  enriched: (Bed & { percent: number; status: Status })[];
+  criticalBeds: (Bed & { percent: number; status: Status })[];
+  stableCount: number;
+  avgRefill: number;
+  onMute: (id: string) => void;
+  onRefill: (id: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <>
+      <section className="mx-auto max-w-[1600px] px-4 pt-5 sm:px-6">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <KpiCard
+            icon={<ShieldCheck className="h-4 w-4" />}
+            label="Total Active Beds"
+            value={String(enriched.length)}
+            sub="6 of 6 monitored"
+            tone="default"
+          />
+          <KpiCard
+            icon={<AlertTriangle className="h-4 w-4" />}
+            label="Critical Replacements"
+            value={String(criticalBeds.length)}
+            sub={criticalBeds.length > 0 ? `${criticalBeds.map((b) => b.id.split(" ")[1]).join(", ")} need refill` : "All clear"}
+            tone={criticalBeds.length > 0 ? "critical" : "default"}
+          />
+          <KpiCard
+            icon={<CheckCircle2 className="h-4 w-4" />}
+            label="Stable Patients"
+            value={String(stableCount)}
+            sub="Fluid level above 30%"
+            tone="stable"
+          />
+          <KpiCard
+            icon={<Gauge className="h-4 w-4" />}
+            label="Avg. Time to Refill"
+            value={`${avgRefill} min`}
+            sub="Across all active beds"
+            tone="default"
+          />
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Patient Bed Monitoring
+          </h2>
+          <p className="text-[11px] text-muted-foreground">Click any card for fluid consumption history</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {enriched.map((b) => (
+            <BedCard
+              key={b.id}
+              bed={b}
+              onMute={() => onMute(b.id)}
+              onRefill={() => onRefill(b.id)}
+              onOpen={() => onOpen(b.id)}
+            />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+// ---------- Patients View ----------
+
+const FLUID_OPTIONS = ["0.9% Normal Saline", "5% Dextrose", "Ringer's Lactate", "Dextrose Saline", "Plasma-Lyte"];
+const WARD_OPTIONS = ["Ward 3 · A", "Ward 3 · B", "Ward 3 · C"];
+
+function PatientsView({
+  patients,
+  beds,
+  onAdd,
+  onRemove,
+}: {
+  patients: PatientRecord[];
+  beds: Bed[];
+  onAdd: (p: Omit<PatientRecord, "id" | "admittedAt">) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [age, setAge] = useState("");
+  const [sex, setSex] = useState<"M" | "F">("M");
+  const [ward, setWard] = useState(WARD_OPTIONS[0]);
+  const [bedId, setBedId] = useState(beds[0]?.id ?? "");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [fluidType, setFluidType] = useState(FLUID_OPTIONS[0]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !age) return;
+    onAdd({
+      name: name.trim(),
+      age: Number(age),
+      sex,
+      ward,
+      bedId,
+      diagnosis: diagnosis.trim() || "—",
+      fluidType,
+    });
+    setName("");
+    setAge("");
+    setDiagnosis("");
+  };
+
+  const inputCls =
+    "w-full rounded-md border border-input bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring";
+
+  return (
+    <section className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+        <form onSubmit={submit} className="rounded-xl border border-border bg-surface p-4 h-fit">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
+              <Plus className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">Admit New Patient</h3>
+              <p className="text-[11px] text-muted-foreground">Register intake for IV monitoring</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Full Name</label>
+              <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Okafor M." required />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Age</label>
+                <input className={inputCls} type="number" min="0" max="120" value={age} onChange={(e) => setAge(e.target.value)} placeholder="42" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Sex</label>
+                <select className={inputCls} value={sex} onChange={(e) => setSex(e.target.value as "M" | "F")}>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Ward</label>
+                <select className={inputCls} value={ward} onChange={(e) => setWard(e.target.value)}>
+                  {WARD_OPTIONS.map((w) => <option key={w} value={w}>{w}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Bed</label>
+                <select className={inputCls} value={bedId} onChange={(e) => setBedId(e.target.value)}>
+                  {beds.map((b) => <option key={b.id} value={b.id}>{b.id}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Diagnosis</label>
+              <input className={inputCls} value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="Post-op rehydration" />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">IV Fluid Type</label>
+              <select className={inputCls} value={fluidType} onChange={(e) => setFluidType(e.target.value)}>
+                {FLUID_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <button
+              type="submit"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" /> Register Patient
+            </button>
+          </div>
+        </form>
+
+        <div className="rounded-xl border border-border bg-surface">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div>
+              <h3 className="text-sm font-bold">Admitted Patients</h3>
+              <p className="text-[11px] text-muted-foreground">{patients.length} active record{patients.length === 1 ? "" : "s"}</p>
+            </div>
+            <span className="rounded-full bg-stable-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-foreground">
+              Live
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface-elevated text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-2.5">ID</th>
+                  <th className="px-4 py-2.5">Patient</th>
+                  <th className="px-4 py-2.5">Age/Sex</th>
+                  <th className="px-4 py-2.5">Bed</th>
+                  <th className="px-4 py-2.5">Diagnosis</th>
+                  <th className="px-4 py-2.5">IV Fluid</th>
+                  <th className="px-4 py-2.5">Admitted</th>
+                  <th className="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {patients.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      No patient records yet. Use the form to admit a patient.
+                    </td>
+                  </tr>
+                ) : patients.map((p) => (
+                  <tr key={p.id} className="hover:bg-surface-elevated">
+                    <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{p.id}</td>
+                    <td className="px-4 py-2.5 font-semibold">{p.name}</td>
+                    <td className="px-4 py-2.5 tabular-nums">{p.age} · {p.sex}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium">{p.bedId}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{p.diagnosis}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{p.fluidType}</td>
+                    <td className="px-4 py-2.5 text-[11px] text-muted-foreground tabular-nums">
+                      {p.admittedAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        onClick={() => onRemove(p.id)}
+                        className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-critical-soft hover:text-foreground"
+                        aria-label={`Remove ${p.name}`}
+                      >
+                        <Trash2 className="h-3 w-3" /> Discharge
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
