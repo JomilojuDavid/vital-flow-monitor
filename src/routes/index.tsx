@@ -160,7 +160,6 @@ function Dashboard() {
   const [logs, setLogs] = useState<AlertLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
   const [openBedId, setOpenBedId] = useState<string | null>(null);
-  const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
   const [dismissedBanner, setDismissedBanner] = useState<Set<string>>(new Set());
 
   // clock
