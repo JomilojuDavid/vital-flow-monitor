@@ -157,6 +157,26 @@ interface AlertLog {
   at: Date;
 }
 
+interface PatientRecord {
+  id: string;
+  name: string;
+  age: number;
+  sex: "M" | "F";
+  ward: string;
+  bedId: string;
+  diagnosis: string;
+  fluidType: string;
+  admittedAt: Date;
+}
+
+const INITIAL_PATIENTS: PatientRecord[] = [
+  { id: "P-1001", name: "Adeyemi J.", age: 42, sex: "M", ward: "Ward 3 · A", bedId: "BED 01", diagnosis: "Post-op rehydration", fluidType: "0.9% Normal Saline", admittedAt: new Date(Date.now() - 86400000 * 2) },
+  { id: "P-1002", name: "Komolafe D.", age: 31, sex: "F", ward: "Ward 3 · A", bedId: "BED 02", diagnosis: "Hypoglycemia", fluidType: "5% Dextrose", admittedAt: new Date(Date.now() - 86400000) },
+  { id: "P-1003", name: "Ibrahim S.", age: 58, sex: "M", ward: "Ward 3 · B", bedId: "BED 03", diagnosis: "Sepsis recovery", fluidType: "Ringer's Lactate", admittedAt: new Date(Date.now() - 86400000 * 3) },
+];
+
+type Tab = "monitoring" | "patients";
+
 function Dashboard() {
   const [beds, setBeds] = useState<Bed[]>(INITIAL_BEDS);
   const [now, setNow] = useState(new Date());
@@ -166,6 +186,18 @@ function Dashboard() {
   const [showLogs, setShowLogs] = useState(false);
   const [openBedId, setOpenBedId] = useState<string | null>(null);
   const [dismissedBanner, setDismissedBanner] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<Tab>("monitoring");
+  const [patients, setPatients] = useState<PatientRecord[]>(INITIAL_PATIENTS);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    return (localStorage.getItem("iv-theme") as "light" | "dark") || "light";
+  });
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    localStorage.setItem("iv-theme", theme);
+  }, [theme]);
 
   // clock
   useEffect(() => {
