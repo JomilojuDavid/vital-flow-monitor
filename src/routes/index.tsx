@@ -69,7 +69,7 @@ interface Bed {
 
 const INITIAL_BEDS: Bed[] = [
   { id: "BED 01", name: "BED 01", patient: "Adeyemi J.", ward: "Ward 3 · A", totalMl: 500, currentMl: 412, flowRate: 28, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
-  { id: "BED 02", name: "BED 02", patient: "Okonkwo M.", ward: "Ward 3 · A", totalMl: 500, currentMl: 165, flowRate: 32, fluidType: "5% Dextrose", muted: false, ackCritical: false },
+  { id: "BED 02", name: "BED 02", patient: "Komolafe D.", ward: "Ward 3 · A", totalMl: 500, currentMl: 165, flowRate: 32, fluidType: "5% Dextrose", muted: false, ackCritical: false },
   { id: "BED 03", name: "BED 03", patient: "Ibrahim S.", ward: "Ward 3 · B", totalMl: 1000, currentMl: 740, flowRate: 24, fluidType: "Ringer's Lactate", muted: false, ackCritical: false },
   { id: "BED 04", name: "BED 04", patient: "Balogun K.", ward: "Ward 3 · B", totalMl: 500, currentMl: 380, flowRate: 30, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
   { id: "BED 05", name: "BED 05", patient: "Eze C.", ward: "Ward 3 · C", totalMl: 500, currentMl: 78, flowRate: 36, fluidType: "5% Dextrose", muted: false, ackCritical: false },
