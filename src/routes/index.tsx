@@ -21,6 +21,8 @@ import {
   Trash2,
   User2,
   Users,
+  Vibrate,
+  VibrateOff,
   X,
 } from "lucide-react";
 import {
@@ -34,6 +36,9 @@ import {
   Area,
   AreaChart,
 } from "recharts";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -169,11 +174,32 @@ interface PatientRecord {
   admittedAt: Date;
 }
 
-const INITIAL_PATIENTS: PatientRecord[] = [
-  { id: "P-1001", name: "Adeyemi J.", age: 42, sex: "M", ward: "Ward 3 · A", bedId: "BED 01", diagnosis: "Post-op rehydration", fluidType: "0.9% Normal Saline", admittedAt: new Date(Date.now() - 86400000 * 2) },
-  { id: "P-1002", name: "Komolafe D.", age: 31, sex: "F", ward: "Ward 3 · A", bedId: "BED 02", diagnosis: "Hypoglycemia", fluidType: "5% Dextrose", admittedAt: new Date(Date.now() - 86400000) },
-  { id: "P-1003", name: "Ibrahim S.", age: 58, sex: "M", ward: "Ward 3 · B", bedId: "BED 03", diagnosis: "Sepsis recovery", fluidType: "Ringer's Lactate", admittedAt: new Date(Date.now() - 86400000 * 3) },
-];
+interface DbPatient {
+  id: string;
+  name: string;
+  age: number;
+  sex: string;
+  ward: string;
+  bed_id: string;
+  diagnosis: string;
+  fluid_type: string;
+  admitted_at: string;
+}
+
+function rowToPatient(r: DbPatient): PatientRecord {
+  return {
+    id: r.id,
+    name: r.name,
+    age: r.age,
+    sex: (r.sex === "F" ? "F" : "M") as "M" | "F",
+    ward: r.ward,
+    bedId: r.bed_id,
+    diagnosis: r.diagnosis,
+    fluidType: r.fluid_type,
+    admittedAt: new Date(r.admitted_at),
+  };
+}
+
 
 type Tab = "monitoring" | "patients";
 
@@ -187,10 +213,15 @@ function Dashboard() {
   const [openBedId, setOpenBedId] = useState<string | null>(null);
   const [dismissedBanner, setDismissedBanner] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<Tab>("monitoring");
-  const [patients, setPatients] = useState<PatientRecord[]>(INITIAL_PATIENTS);
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     return (localStorage.getItem("iv-theme") as "light" | "dark") || "light";
+  });
+  const [vibrationOn, setVibrationOn] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("iv-vibration") !== "off";
   });
 
   useEffect(() => {
@@ -198,6 +229,12 @@ function Dashboard() {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("iv-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("iv-vibration", vibrationOn ? "on" : "off");
+  }, [vibrationOn]);
+
 
   // clock
   useEffect(() => {
@@ -290,6 +327,78 @@ function Dashboard() {
   // chime when any unmuted critical exists
   const chimeActive = criticalBeds.some((b) => !b.muted) && !!bannerBed;
   useChime(chimeActive);
+
+  // haptic vibration for critical alerts
+  useEffect(() => {
+    if (!chimeActive || !vibrationOn) return;
+    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+    // urgent triple-buzz pattern, repeats every 2.2s alongside chime
+    const pattern = [220, 120, 220, 120, 320];
+    navigator.vibrate(pattern);
+    const t = window.setInterval(() => navigator.vibrate(pattern), 2200);
+    return () => {
+      window.clearInterval(t);
+      navigator.vibrate(0);
+    };
+  }, [chimeActive, vibrationOn]);
+
+  // load patients from cloud
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from("patients")
+        .select("*")
+        .order("admitted_at", { ascending: false });
+      if (!active) return;
+      if (error) {
+        toast.error("Failed to load patients", { description: error.message });
+      } else if (data) {
+        setPatients(data.map((r) => rowToPatient(r as DbPatient)));
+      }
+      setPatientsLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const addPatient = async (p: Omit<PatientRecord, "id" | "admittedAt">) => {
+    const { data, error } = await supabase
+      .from("patients")
+      .insert({
+        name: p.name,
+        age: p.age,
+        sex: p.sex,
+        ward: p.ward,
+        bed_id: p.bedId,
+        diagnosis: p.diagnosis,
+        fluid_type: p.fluidType,
+      })
+      .select()
+      .single();
+    if (error) {
+      toast.error("Could not save patient", { description: error.message });
+      return;
+    }
+    if (data) {
+      setPatients((prev) => [rowToPatient(data as DbPatient), ...prev]);
+      toast.success("Patient admitted", { description: `${p.name} · ${p.bedId}` });
+    }
+  };
+
+  const removePatient = async (id: string) => {
+    const prev = patients;
+    setPatients((cur) => cur.filter((x) => x.id !== id));
+    const { error } = await supabase.from("patients").delete().eq("id", id);
+    if (error) {
+      setPatients(prev);
+      toast.error("Could not discharge", { description: error.message });
+    } else {
+      toast.success("Patient discharged");
+    }
+  };
+
 
   // actions
   const toggleMute = (id: string) =>
@@ -402,6 +511,30 @@ function Dashboard() {
 
           <div className="flex items-center gap-2 sm:gap-3">
             <button
+              onClick={() => {
+                const next = !vibrationOn;
+                setVibrationOn(next);
+                if (next && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+                  navigator.vibrate([80, 40, 80]);
+                }
+                toast(next ? "Haptic vibration enabled" : "Haptic vibration muted", {
+                  description: next
+                    ? "Device will buzz on critical alerts."
+                    : "Vibration alerts silenced.",
+                });
+              }}
+              className={`inline-flex items-center justify-center rounded-md border p-2 ${
+                vibrationOn
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border bg-surface hover:bg-secondary"
+              }`}
+              aria-label="Toggle vibration"
+              aria-pressed={vibrationOn}
+              title={vibrationOn ? "Disable haptic vibration" : "Enable haptic vibration"}
+            >
+              {vibrationOn ? <Vibrate className="h-4 w-4" /> : <VibrateOff className="h-4 w-4" />}
+            </button>
+            <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="inline-flex items-center justify-center rounded-md border border-border bg-surface p-2 hover:bg-secondary"
               aria-label="Toggle theme"
@@ -409,6 +542,7 @@ function Dashboard() {
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
+
             <button
               onClick={() => setShowLogs(true)}
               className="relative inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-xs font-medium hover:bg-secondary"
@@ -461,15 +595,12 @@ function Dashboard() {
         <PatientsView
           patients={patients}
           beds={beds}
-          onAdd={(p) =>
-            setPatients((prev) => [
-              { ...p, id: `P-${1000 + prev.length + 1}`, admittedAt: new Date() },
-              ...prev,
-            ])
-          }
-          onRemove={(id) => setPatients((prev) => prev.filter((p) => p.id !== id))}
+          loading={patientsLoading}
+          onAdd={addPatient}
+          onRemove={removePatient}
         />
       )}
+
 
 
       {/* Simulation panel (floating) */}
@@ -1051,13 +1182,15 @@ const WARD_OPTIONS = ["Ward 3 · A", "Ward 3 · B", "Ward 3 · C"];
 function PatientsView({
   patients,
   beds,
+  loading,
   onAdd,
   onRemove,
 }: {
   patients: PatientRecord[];
   beds: Bed[];
-  onAdd: (p: Omit<PatientRecord, "id" | "admittedAt">) => void;
-  onRemove: (id: string) => void;
+  loading?: boolean;
+  onAdd: (p: Omit<PatientRecord, "id" | "admittedAt">) => Promise<void> | void;
+  onRemove: (id: string) => Promise<void> | void;
 }) {
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
@@ -1066,23 +1199,30 @@ function PatientsView({
   const [bedId, setBedId] = useState(beds[0]?.id ?? "");
   const [diagnosis, setDiagnosis] = useState("");
   const [fluidType, setFluidType] = useState(FLUID_OPTIONS[0]);
+  const [saving, setSaving] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !age) return;
-    onAdd({
-      name: name.trim(),
-      age: Number(age),
-      sex,
-      ward,
-      bedId,
-      diagnosis: diagnosis.trim() || "—",
-      fluidType,
-    });
-    setName("");
-    setAge("");
-    setDiagnosis("");
+    setSaving(true);
+    try {
+      await onAdd({
+        name: name.trim(),
+        age: Number(age),
+        sex,
+        ward,
+        bedId,
+        diagnosis: diagnosis.trim() || "—",
+        fluidType,
+      });
+      setName("");
+      setAge("");
+      setDiagnosis("");
+    } finally {
+      setSaving(false);
+    }
   };
+
 
   const inputCls =
     "w-full rounded-md border border-input bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring";
@@ -1144,10 +1284,12 @@ function PatientsView({
             </div>
             <button
               type="submit"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
+              disabled={saving}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
             >
-              <Plus className="h-4 w-4" /> Register Patient
+              <Plus className="h-4 w-4" /> {saving ? "Saving…" : "Register Patient"}
             </button>
+
           </div>
         </form>
 
@@ -1176,7 +1318,13 @@ function PatientsView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {patients.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      Loading patient records from cloud…
+                    </td>
+                  </tr>
+                ) : patients.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
                       No patient records yet. Use the form to admit a patient.
@@ -1184,7 +1332,8 @@ function PatientsView({
                   </tr>
                 ) : patients.map((p) => (
                   <tr key={p.id} className="hover:bg-surface-elevated">
-                    <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{p.id}</td>
+
+                    <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{p.id.slice(0, 8)}</td>
                     <td className="px-4 py-2.5 font-semibold">{p.name}</td>
                     <td className="px-4 py-2.5 tabular-nums">{p.age} · {p.sex}</td>
                     <td className="px-4 py-2.5">
