@@ -192,10 +192,15 @@ function Dashboard() {
   const [openBedId, setOpenBedId] = useState<string | null>(null);
   const [dismissedBanner, setDismissedBanner] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<Tab>("monitoring");
-  const [patients, setPatients] = useState<PatientRecord[]>(INITIAL_PATIENTS);
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     return (localStorage.getItem("iv-theme") as "light" | "dark") || "light";
+  });
+  const [vibrationOn, setVibrationOn] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("iv-vibration") !== "off";
   });
 
   useEffect(() => {
@@ -203,6 +208,12 @@ function Dashboard() {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("iv-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("iv-vibration", vibrationOn ? "on" : "off");
+  }, [vibrationOn]);
+
 
   // clock
   useEffect(() => {
