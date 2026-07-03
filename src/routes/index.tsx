@@ -328,6 +328,78 @@ function Dashboard() {
   const chimeActive = criticalBeds.some((b) => !b.muted) && !!bannerBed;
   useChime(chimeActive);
 
+  // haptic vibration for critical alerts
+  useEffect(() => {
+    if (!chimeActive || !vibrationOn) return;
+    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+    // urgent triple-buzz pattern, repeats every 2.2s alongside chime
+    const pattern = [220, 120, 220, 120, 320];
+    navigator.vibrate(pattern);
+    const t = window.setInterval(() => navigator.vibrate(pattern), 2200);
+    return () => {
+      window.clearInterval(t);
+      navigator.vibrate(0);
+    };
+  }, [chimeActive, vibrationOn]);
+
+  // load patients from cloud
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from("patients")
+        .select("*")
+        .order("admitted_at", { ascending: false });
+      if (!active) return;
+      if (error) {
+        toast.error("Failed to load patients", { description: error.message });
+      } else if (data) {
+        setPatients(data.map((r) => rowToPatient(r as DbPatient)));
+      }
+      setPatientsLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const addPatient = async (p: Omit<PatientRecord, "id" | "admittedAt">) => {
+    const { data, error } = await supabase
+      .from("patients")
+      .insert({
+        name: p.name,
+        age: p.age,
+        sex: p.sex,
+        ward: p.ward,
+        bed_id: p.bedId,
+        diagnosis: p.diagnosis,
+        fluid_type: p.fluidType,
+      })
+      .select()
+      .single();
+    if (error) {
+      toast.error("Could not save patient", { description: error.message });
+      return;
+    }
+    if (data) {
+      setPatients((prev) => [rowToPatient(data as DbPatient), ...prev]);
+      toast.success("Patient admitted", { description: `${p.name} · ${p.bedId}` });
+    }
+  };
+
+  const removePatient = async (id: string) => {
+    const prev = patients;
+    setPatients((cur) => cur.filter((x) => x.id !== id));
+    const { error } = await supabase.from("patients").delete().eq("id", id);
+    if (error) {
+      setPatients(prev);
+      toast.error("Could not discharge", { description: error.message });
+    } else {
+      toast.success("Patient discharged");
+    }
+  };
+
+
   // actions
   const toggleMute = (id: string) =>
     setBeds((prev) => prev.map((b) => (b.id === id ? { ...b, muted: !b.muted } : b)));
