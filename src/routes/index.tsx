@@ -595,15 +595,12 @@ function Dashboard() {
         <PatientsView
           patients={patients}
           beds={beds}
-          onAdd={(p) =>
-            setPatients((prev) => [
-              { ...p, id: `P-${1000 + prev.length + 1}`, admittedAt: new Date() },
-              ...prev,
-            ])
-          }
-          onRemove={(id) => setPatients((prev) => prev.filter((p) => p.id !== id))}
+          loading={patientsLoading}
+          onAdd={addPatient}
+          onRemove={removePatient}
         />
       )}
+
 
 
       {/* Simulation panel (floating) */}
