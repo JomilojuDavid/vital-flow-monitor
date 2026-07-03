@@ -1318,7 +1318,13 @@ function PatientsView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {patients.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      Loading patient records from cloud…
+                    </td>
+                  </tr>
+                ) : patients.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
                       No patient records yet. Use the form to admit a patient.
@@ -1326,6 +1332,7 @@ function PatientsView({
                   </tr>
                 ) : patients.map((p) => (
                   <tr key={p.id} className="hover:bg-surface-elevated">
+
                     <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{p.id}</td>
                     <td className="px-4 py-2.5 font-semibold">{p.name}</td>
                     <td className="px-4 py-2.5 tabular-nums">{p.age} · {p.sex}</td>
