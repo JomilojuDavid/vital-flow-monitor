@@ -21,6 +21,8 @@ import {
   Trash2,
   User2,
   Users,
+  Vibrate,
+  VibrateOff,
   X,
 } from "lucide-react";
 import {
@@ -34,6 +36,9 @@ import {
   Area,
   AreaChart,
 } from "recharts";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
