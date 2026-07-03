@@ -511,6 +511,30 @@ function Dashboard() {
 
           <div className="flex items-center gap-2 sm:gap-3">
             <button
+              onClick={() => {
+                const next = !vibrationOn;
+                setVibrationOn(next);
+                if (next && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+                  navigator.vibrate([80, 40, 80]);
+                }
+                toast(next ? "Haptic vibration enabled" : "Haptic vibration muted", {
+                  description: next
+                    ? "Device will buzz on critical alerts."
+                    : "Vibration alerts silenced.",
+                });
+              }}
+              className={`inline-flex items-center justify-center rounded-md border p-2 ${
+                vibrationOn
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border bg-surface hover:bg-secondary"
+              }`}
+              aria-label="Toggle vibration"
+              aria-pressed={vibrationOn}
+              title={vibrationOn ? "Disable haptic vibration" : "Enable haptic vibration"}
+            >
+              {vibrationOn ? <Vibrate className="h-4 w-4" /> : <VibrateOff className="h-4 w-4" />}
+            </button>
+            <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="inline-flex items-center justify-center rounded-md border border-border bg-surface p-2 hover:bg-secondary"
               aria-label="Toggle theme"
@@ -518,6 +542,7 @@ function Dashboard() {
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
+
             <button
               onClick={() => setShowLogs(true)}
               className="relative inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-xs font-medium hover:bg-secondary"
