@@ -1182,13 +1182,15 @@ const WARD_OPTIONS = ["Ward 3 · A", "Ward 3 · B", "Ward 3 · C"];
 function PatientsView({
   patients,
   beds,
+  loading,
   onAdd,
   onRemove,
 }: {
   patients: PatientRecord[];
   beds: Bed[];
-  onAdd: (p: Omit<PatientRecord, "id" | "admittedAt">) => void;
-  onRemove: (id: string) => void;
+  loading?: boolean;
+  onAdd: (p: Omit<PatientRecord, "id" | "admittedAt">) => Promise<void> | void;
+  onRemove: (id: string) => Promise<void> | void;
 }) {
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
@@ -1197,17 +1199,21 @@ function PatientsView({
   const [bedId, setBedId] = useState(beds[0]?.id ?? "");
   const [diagnosis, setDiagnosis] = useState("");
   const [fluidType, setFluidType] = useState(FLUID_OPTIONS[0]);
+  const [saving, setSaving] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !age) return;
-    onAdd({
-      name: name.trim(),
-      age: Number(age),
-      sex,
-      ward,
-      bedId,
-      diagnosis: diagnosis.trim() || "—",
+    setSaving(true);
+    try {
+      await onAdd({
+        name: name.trim(),
+        age: Number(age),
+        sex,
+        ward,
+        bedId,
+        diagnosis: diagnosis.trim() || "—",
+
       fluidType,
     });
     setName("");
