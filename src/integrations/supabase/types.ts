@@ -14,7 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      patients: {
+        Row: {
+          admitted_at: string
+          age: number
+          bed_id: string
+          diagnosis: string
+          fluid_type: string
+          id: string
+          name: string
+          sex: string
+          ward: string
+        }
+        Insert: {
+          admitted_at?: string
+          age: number
+          bed_id: string
+          diagnosis?: string
+          fluid_type: string
+          id?: string
+          name: string
+          sex: string
+          ward: string
+        }
+        Update: {
+          admitted_at?: string
+          age?: number
+          bed_id?: string
+          diagnosis?: string
+          fluid_type?: string
+          id?: string
+          name?: string
+          sex?: string
+          ward?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
