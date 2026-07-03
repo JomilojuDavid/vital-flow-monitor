@@ -1333,7 +1333,7 @@ function PatientsView({
                 ) : patients.map((p) => (
                   <tr key={p.id} className="hover:bg-surface-elevated">
 
-                    <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{p.id}</td>
+                    <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{p.id.slice(0, 8)}</td>
                     <td className="px-4 py-2.5 font-semibold">{p.name}</td>
                     <td className="px-4 py-2.5 tabular-nums">{p.age} · {p.sex}</td>
                     <td className="px-4 py-2.5">
