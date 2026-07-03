@@ -1284,10 +1284,12 @@ function PatientsView({
             </div>
             <button
               type="submit"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
+              disabled={saving}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
             >
-              <Plus className="h-4 w-4" /> Register Patient
+              <Plus className="h-4 w-4" /> {saving ? "Saving…" : "Register Patient"}
             </button>
+
           </div>
         </form>
 
