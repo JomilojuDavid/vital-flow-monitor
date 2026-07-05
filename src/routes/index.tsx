@@ -223,6 +223,8 @@ function Dashboard() {
     if (typeof window === "undefined") return true;
     return localStorage.getItem("iv-vibration") !== "off";
   });
+  const [vibrationSupported, setVibrationSupported] = useState(false);
+  const [hapticPulse, setHapticPulse] = useState(false);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -234,6 +236,12 @@ function Dashboard() {
     if (typeof window === "undefined") return;
     localStorage.setItem("iv-vibration", vibrationOn ? "on" : "off");
   }, [vibrationOn]);
+
+  // detect Vibration API support (Android Chrome/Firefox only; iOS + desktop lack it)
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    setVibrationSupported(typeof navigator.vibrate === "function");
+  }, []);
 
 
   // clock
@@ -328,17 +336,45 @@ function Dashboard() {
   const chimeActive = criticalBeds.some((b) => !b.muted) && !!bannerBed;
   useChime(chimeActive);
 
-  // haptic vibration for critical alerts
+  // haptic vibration for critical alerts (with visual pulse fallback for unsupported devices)
   useEffect(() => {
-    if (!chimeActive || !vibrationOn) return;
-    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
-    // urgent triple-buzz pattern, repeats every 2.2s alongside chime
+    if (!chimeActive || !vibrationOn) {
+      setHapticPulse(false);
+      return;
+    }
     const pattern = [220, 120, 220, 120, 320];
-    navigator.vibrate(pattern);
-    const t = window.setInterval(() => navigator.vibrate(pattern), 2200);
+    const canVibrate =
+      typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+    const buzz = () => {
+      if (canVibrate) {
+        try {
+          navigator.vibrate(pattern);
+        } catch {
+          /* some browsers throw without user activation */
+        }
+      }
+      // visual pulse always fires so unsupported devices still get feedback
+      setHapticPulse(true);
+      window.setTimeout(() => setHapticPulse(false), 900);
+    };
+    buzz();
+    const t = window.setInterval(buzz, 2200);
+    // re-prime when tab becomes visible again (Chrome pauses timers)
+    const onVis = () => {
+      if (document.visibilityState === "visible") buzz();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       window.clearInterval(t);
-      navigator.vibrate(0);
+      document.removeEventListener("visibilitychange", onVis);
+      if (canVibrate) {
+        try {
+          navigator.vibrate(0);
+        } catch {
+          /* noop */
+        }
+      }
+      setHapticPulse(false);
     };
   }, [chimeActive, vibrationOn]);
 
@@ -432,7 +468,19 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Visual haptic pulse — fires alongside (or in place of) device vibration */}
+      {vibrationOn && chimeActive && (
+        <div
+          aria-hidden
+          className={`pointer-events-none fixed inset-0 z-[60] ring-inset ring-critical transition-[box-shadow,opacity] duration-200 ${
+            hapticPulse
+              ? "opacity-100 shadow-[inset_0_0_0_6px_var(--color-critical,#ef4444)]"
+              : "opacity-40 shadow-[inset_0_0_0_2px_var(--color-critical,#ef4444)]"
+          }`}
+        />
+      )}
       {/* Critical alert banner */}
+
       {bannerBed && (
         <div className="sticky top-0 z-40 animate-slide-down">
           <div className="bg-critical text-critical-foreground shadow-lg">
@@ -514,14 +562,35 @@ function Dashboard() {
               onClick={() => {
                 const next = !vibrationOn;
                 setVibrationOn(next);
-                if (next && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-                  navigator.vibrate([80, 40, 80]);
+                // Prime the Vibration API inside the user gesture so browsers
+                // that require recent user activation allow subsequent buzzes.
+                let primed = false;
+                if (next && vibrationSupported) {
+                  try {
+                    primed = navigator.vibrate([80, 40, 80]);
+                  } catch {
+                    primed = false;
+                  }
                 }
-                toast(next ? "Haptic vibration enabled" : "Haptic vibration muted", {
-                  description: next
-                    ? "Device will buzz on critical alerts."
-                    : "Vibration alerts silenced.",
-                });
+                if (!next) {
+                  toast("Haptic vibration muted", {
+                    description: "Vibration alerts silenced.",
+                  });
+                } else if (!vibrationSupported) {
+                  toast("Haptic vibration unavailable", {
+                    description:
+                      "This device/browser doesn't support the Vibration API (iOS Safari & most desktops). A visual pulse + audio chime will fire on critical alerts instead.",
+                  });
+                } else if (!primed) {
+                  toast("Haptic vibration enabled", {
+                    description:
+                      "Buzz test was blocked — tap again after any interaction to confirm your device vibrates.",
+                  });
+                } else {
+                  toast("Haptic vibration enabled", {
+                    description: "Device will buzz on critical alerts.",
+                  });
+                }
               }}
               className={`inline-flex items-center justify-center rounded-md border p-2 ${
                 vibrationOn
@@ -530,7 +599,13 @@ function Dashboard() {
               }`}
               aria-label="Toggle vibration"
               aria-pressed={vibrationOn}
-              title={vibrationOn ? "Disable haptic vibration" : "Enable haptic vibration"}
+              title={
+                !vibrationSupported
+                  ? "Vibration API not supported on this device — visual pulse fallback active"
+                  : vibrationOn
+                    ? "Disable haptic vibration"
+                    : "Enable haptic vibration"
+              }
             >
               {vibrationOn ? <Vibrate className="h-4 w-4" /> : <VibrateOff className="h-4 w-4" />}
             </button>
