@@ -468,7 +468,19 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Visual haptic pulse — fires alongside (or in place of) device vibration */}
+      {vibrationOn && chimeActive && (
+        <div
+          aria-hidden
+          className={`pointer-events-none fixed inset-0 z-[60] ring-inset ring-critical transition-[box-shadow,opacity] duration-200 ${
+            hapticPulse
+              ? "opacity-100 shadow-[inset_0_0_0_6px_var(--color-critical,#ef4444)]"
+              : "opacity-40 shadow-[inset_0_0_0_2px_var(--color-critical,#ef4444)]"
+          }`}
+        />
+      )}
       {/* Critical alert banner */}
+
       {bannerBed && (
         <div className="sticky top-0 z-40 animate-slide-down">
           <div className="bg-critical text-critical-foreground shadow-lg">
