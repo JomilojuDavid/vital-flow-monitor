@@ -223,6 +223,8 @@ function Dashboard() {
     if (typeof window === "undefined") return true;
     return localStorage.getItem("iv-vibration") !== "off";
   });
+  const [vibrationSupported, setVibrationSupported] = useState(false);
+  const [hapticPulse, setHapticPulse] = useState(false);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -234,6 +236,12 @@ function Dashboard() {
     if (typeof window === "undefined") return;
     localStorage.setItem("iv-vibration", vibrationOn ? "on" : "off");
   }, [vibrationOn]);
+
+  // detect Vibration API support (Android Chrome/Firefox only; iOS + desktop lack it)
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    setVibrationSupported(typeof navigator.vibrate === "function");
+  }, []);
 
 
   // clock
