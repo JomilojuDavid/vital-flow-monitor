@@ -336,17 +336,45 @@ function Dashboard() {
   const chimeActive = criticalBeds.some((b) => !b.muted) && !!bannerBed;
   useChime(chimeActive);
 
-  // haptic vibration for critical alerts
+  // haptic vibration for critical alerts (with visual pulse fallback for unsupported devices)
   useEffect(() => {
-    if (!chimeActive || !vibrationOn) return;
-    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
-    // urgent triple-buzz pattern, repeats every 2.2s alongside chime
+    if (!chimeActive || !vibrationOn) {
+      setHapticPulse(false);
+      return;
+    }
     const pattern = [220, 120, 220, 120, 320];
-    navigator.vibrate(pattern);
-    const t = window.setInterval(() => navigator.vibrate(pattern), 2200);
+    const canVibrate =
+      typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+    const buzz = () => {
+      if (canVibrate) {
+        try {
+          navigator.vibrate(pattern);
+        } catch {
+          /* some browsers throw without user activation */
+        }
+      }
+      // visual pulse always fires so unsupported devices still get feedback
+      setHapticPulse(true);
+      window.setTimeout(() => setHapticPulse(false), 900);
+    };
+    buzz();
+    const t = window.setInterval(buzz, 2200);
+    // re-prime when tab becomes visible again (Chrome pauses timers)
+    const onVis = () => {
+      if (document.visibilityState === "visible") buzz();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       window.clearInterval(t);
-      navigator.vibrate(0);
+      document.removeEventListener("visibilitychange", onVis);
+      if (canVibrate) {
+        try {
+          navigator.vibrate(0);
+        } catch {
+          /* noop */
+        }
+      }
+      setHapticPulse(false);
     };
   }, [chimeActive, vibrationOn]);
 
