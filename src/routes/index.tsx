@@ -994,17 +994,24 @@ function SimulationPanel({
   speed,
   onToggle,
   onSpeed,
+  beds,
+  onSetLevel,
+  onResetBed,
 }: {
   on: boolean;
   speed: number;
   onToggle: () => void;
   onSpeed: (s: number) => void;
+  beds: (Bed & { percent: number; status: Status })[];
+  onSetLevel: (id: string, ml: number) => void;
+  onResetBed: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [expandedBed, setExpandedBed] = useState<string | null>(null);
   return (
     <div className="fixed bottom-4 right-4 z-30">
       {open ? (
-        <div className="w-72 rounded-xl border border-border bg-surface shadow-xl">
+        <div className="flex max-h-[80vh] w-80 flex-col rounded-xl border border-border bg-surface shadow-xl">
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <div className="flex items-center gap-2">
               <span className={`relative grid h-2 w-2 place-items-center`}>
@@ -1016,11 +1023,11 @@ function SimulationPanel({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="space-y-3 p-3">
+          <div className="space-y-3 overflow-y-auto p-3">
             <p className="text-[11px] leading-snug text-muted-foreground">
-              Demo mode degrades fluid in <span className="font-semibold text-foreground">Bed 02</span> and{" "}
-              <span className="font-semibold text-foreground">Bed 05</span>. Watch the transition
-              Green → Amber → <span className="text-critical font-semibold">Critical Red</span>.
+              Auto-drain runs on <span className="font-semibold text-foreground">Bed 02</span> and{" "}
+              <span className="font-semibold text-foreground">Bed 05</span>. Use the controls below to
+              set any bed's fluid level manually.
             </p>
             <button
               onClick={onToggle}
@@ -1048,6 +1055,91 @@ function SimulationPanel({
                 ))}
               </div>
             </div>
+
+            <div className="border-t border-border pt-3">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Manual fluid levels
+              </p>
+              <div className="space-y-1.5">
+                {beds.map((b) => {
+                  const isOpen = expandedBed === b.id;
+                  const dotColor =
+                    b.status === "critical"
+                      ? "bg-critical"
+                      : b.status === "warning"
+                        ? "bg-warning"
+                        : "bg-stable";
+                  return (
+                    <div key={b.id} className="rounded-md border border-border bg-background/40">
+                      <button
+                        onClick={() => setExpandedBed(isOpen ? null : b.id)}
+                        className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+                          <span className="text-xs font-semibold">{b.id}</span>
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {b.patient}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
+                          {Math.round(b.currentMl)}/{b.totalMl} ml
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className="space-y-2 border-t border-border px-2.5 py-2">
+                          <input
+                            type="range"
+                            min={0}
+                            max={b.totalMl}
+                            step={1}
+                            value={Math.round(b.currentMl)}
+                            onChange={(e) => onSetLevel(b.id, Number(e.target.value))}
+                            className="w-full accent-primary"
+                            aria-label={`${b.id} fluid level`}
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              max={b.totalMl}
+                              step={1}
+                              value={Math.round(b.currentMl)}
+                              onChange={(e) => onSetLevel(b.id, Number(e.target.value))}
+                              className="w-20 rounded border border-border bg-surface px-2 py-1 text-xs tabular-nums"
+                            />
+                            <span className="text-[11px] text-muted-foreground">ml</span>
+                            <div className="ml-auto flex gap-1">
+                              {[
+                                { label: "Full", v: b.totalMl },
+                                { label: "50%", v: b.totalMl * 0.5 },
+                                { label: "Warn", v: b.totalMl * 0.35 },
+                                { label: "Crit", v: b.totalMl * 0.15 },
+                              ].map((preset) => (
+                                <button
+                                  key={preset.label}
+                                  onClick={() => onSetLevel(b.id, preset.v)}
+                                  className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold hover:bg-secondary"
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                              <button
+                                onClick={() => onResetBed(b.id)}
+                                className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold hover:bg-secondary"
+                                title="Reset to initial value"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       ) : (
@@ -1061,6 +1153,7 @@ function SimulationPanel({
     </div>
   );
 }
+
 
 // ---------- Bed Detail Modal ----------
 
