@@ -550,14 +550,35 @@ function Dashboard() {
               onClick={() => {
                 const next = !vibrationOn;
                 setVibrationOn(next);
-                if (next && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-                  navigator.vibrate([80, 40, 80]);
+                // Prime the Vibration API inside the user gesture so browsers
+                // that require recent user activation allow subsequent buzzes.
+                let primed = false;
+                if (next && vibrationSupported) {
+                  try {
+                    primed = navigator.vibrate([80, 40, 80]);
+                  } catch {
+                    primed = false;
+                  }
                 }
-                toast(next ? "Haptic vibration enabled" : "Haptic vibration muted", {
-                  description: next
-                    ? "Device will buzz on critical alerts."
-                    : "Vibration alerts silenced.",
-                });
+                if (!next) {
+                  toast("Haptic vibration muted", {
+                    description: "Vibration alerts silenced.",
+                  });
+                } else if (!vibrationSupported) {
+                  toast("Haptic vibration unavailable", {
+                    description:
+                      "This device/browser doesn't support the Vibration API (iOS Safari & most desktops). A visual pulse + audio chime will fire on critical alerts instead.",
+                  });
+                } else if (!primed) {
+                  toast("Haptic vibration enabled", {
+                    description:
+                      "Buzz test was blocked — tap again after any interaction to confirm your device vibrates.",
+                  });
+                } else {
+                  toast("Haptic vibration enabled", {
+                    description: "Device will buzz on critical alerts.",
+                  });
+                }
               }}
               className={`inline-flex items-center justify-center rounded-md border p-2 ${
                 vibrationOn
@@ -566,7 +587,13 @@ function Dashboard() {
               }`}
               aria-label="Toggle vibration"
               aria-pressed={vibrationOn}
-              title={vibrationOn ? "Disable haptic vibration" : "Enable haptic vibration"}
+              title={
+                !vibrationSupported
+                  ? "Vibration API not supported on this device — visual pulse fallback active"
+                  : vibrationOn
+                    ? "Disable haptic vibration"
+                    : "Enable haptic vibration"
+              }
             >
               {vibrationOn ? <Vibrate className="h-4 w-4" /> : <VibrateOff className="h-4 w-4" />}
             </button>
