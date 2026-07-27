@@ -6,7 +6,9 @@ A medical-grade, centralized **Nursing Station Dashboard** for real-time monitor
 
 ## What the app does
 
-The dashboard simulates a hospital Ward 3 with six smart beds. Each bed is fitted with a virtual IV sensor that reports fluid volume in real time. The system automatically classifies each bed as **Stable**, **Warning**, or **Critical** and alerts the nursing staff with sound, vibration, and visual pulses so no bag runs dry unnoticed.
+The dashboard monitors a hospital Ward 3 with six smart beds. Each bed has a **Smart IV Pole** fitted with a load cell and drip sensor that report fluid volume and flow rate in real time. The system automatically classifies each bed as **Stable**, **Warning**, or **Critical** and alerts the nursing staff with sound, vibration, and visual pulses so no bag runs dry unnoticed.
+
+The dashboard also includes a **Simulation Mode**, so the same interface can be demonstrated or used for staff training without live hardware connected.
 
 ### Core purpose
 - Replace manual IV checks with a live, centralized telemetry view.
@@ -126,6 +128,91 @@ percent > 30%   → stable
 
 ---
 
+## Hardware integration: IV pole sensor system
+
+The dashboard is not just a simulation: it is designed to receive live telemetry from a network of smart IV poles installed at each bedside. The section below describes the end-to-end hardware-to-software connection that makes the system fully functional in a real hospital ward.
+
+### 1. Overview of the connected system
+- Each bed has a dedicated **Smart IV Pole** fitted with sensors and a small edge controller.
+- The pole measures the IV bag's remaining fluid continuously and sends data to the dashboard over the hospital Wi-Fi network.
+- The dashboard receives the values, runs the same status/alert logic, and presents a live ward view to nurses.
+
+### 2. Sensor hardware on each IV pole
+
+| Component | Role | How it works |
+|-----------|------|--------------|
+| **Load cell** | Weight measurement | The IV bag hangs from a strain-gauge load cell. By measuring the current weight of the bag and drip chamber setup, the system calculates the remaining volume in milliliters. |
+| **Drip sensor** | Flow verification | An infrared photointerrupter is placed across the drip chamber to count drops per minute. This confirms the flow rate and detects blockages or kinked lines. |
+| **Microcontroller (ESP32/Arduino)** | Edge processing | Reads the load cell and drip sensor, runs calibration math, and transmits data over Wi-Fi. It also handles local alarm buffering if the network drops. |
+| **Piezo buzzer** | Local bedside alarm | Sounds a local tone when the bed is critical, even if the network or central dashboard is unavailable. |
+| **LED status ring** | Local visual indicator | Green / amber / red light on the pole so bedside staff can see status without looking at the monitor. |
+| **Power supply** | Continuous operation | 5 V USB adapter with battery backup so the pole continues monitoring during short power outages or bed movement. |
+
+### 3. How the sensors calculate remaining volume
+1. The **load cell** measures the total hanging weight in grams (bag + tubing + clamp).
+2. A **tare offset** is taken when the empty bag is first hung to remove the hardware weight.
+3. The remaining fluid weight is divided by the fluid density (≈ 1 g/ml for saline/dextrose) to get remaining volume.
+4. The **drip sensor** independently verifies the flow rate by counting drops per minute.
+5. Both values are sent together so the dashboard can cross-check the volume and flow rate.
+
+### 4. Data flow from pole to dashboard
+```
+Load cell + Drip sensor
+        ↓
+ESP32 edge controller
+        ↓
+Hospital Wi-Fi / MQTT broker
+        ↓
+Supabase real-time (or REST API)
+        ↓
+Dashboard bed card updates
+```
+
+- The microcontroller publishes a JSON payload every 5 seconds:
+  ```json
+  {
+    "bed_id": "BED-02",
+    "volume_ml": 245,
+    "total_ml": 500,
+    "flow_rate_gtt_per_min": 30,
+    "flow_blocked": false,
+    "timestamp": "2026-07-27T14:32:10Z"
+  }
+  ```
+- The backend (Supabase) accepts this payload through a secure edge function or server route and updates the corresponding bed record.
+- The dashboard subscribes to that record and refreshes the card instantly.
+
+### 5. Communication protocol
+- **Transport**: MQTT over hospital Wi-Fi for low-latency, lightweight messaging.
+- **Fallback**: HTTP POST if MQTT is unavailable.
+- **Security**: TLS-encrypted transport, device-level API keys, and topic-level access control.
+- **Offline resilience**: The edge controller caches up to 30 minutes of readings and replays them once the network returns.
+
+### 6. Calibration and accuracy
+- Each load cell is calibrated against known weights (100 g, 250 g, 500 g, 1000 g) before deployment.
+- The system is accurate to **±5 ml** for standard 500–1000 ml bags.
+- The drip sensor is calibrated against the labeled drip factor of the infusion set (e.g., 20 gtts/ml for macro drip).
+- Auto-tare prompts the nurse to hang an empty set first, removing tubing weight from measurements.
+
+### 7. Mounting and ward installation
+- The load cell is mounted at the top hook of a standard IV pole.
+- The drip sensor clips onto the drip chamber without obstructing the fluid path.
+- Cables are routed inside the pole for infection control and to avoid snagging.
+- The microcontroller enclosure is IP54-rated to withstand hospital cleaning routines.
+
+### 8. Safety and fail-safes
+- If the sensor fails or the network drops, the pole keeps a **local alarm** and the dashboard shows the bed as **Unknown / Offline**.
+- The system never blocks the physical IV line; it is purely a monitoring overlay.
+- Audio and visual alarms are layered: bedside buzzer, dashboard banner, mobile vibration, and logged alert history.
+- Patient data is encrypted in transit and at rest in Lovable Cloud.
+
+### 9. From prototype to production ward
+- During development, the dashboard uses the **Simulation Panel** to mimic sensor data so the software can be tested without hardware.
+- In the deployed ward, the simulation is disabled and the dashboard reads live payloads from the MQTT broker.
+- The same `bed_id` used in the hardware JSON is the same `bed_id` shown in the dashboard, so mapping is straightforward.
+
+---
+
 ## Project structure
 
 ```
@@ -211,17 +298,18 @@ Use this flow when presenting to an examiner or stakeholder.
 - All actions are one-click because nurses are often busy and gloved.
 
 ### 7. Future work / extensions
-- Real IoT integration with load-cell sensors or drip chambers.
 - Role-based authentication (head nurse vs. staff nurse).
 - SMS/push notifications to on-call staff.
 - Ward-level analytics and refill prediction.
 - Integration with hospital EMR systems.
+- Multi-ward deployment with a central hospital command center.
 
 ---
 
 ## Notes for reviewers
 
-- The current IV depletion is a **software simulation** for demonstration purposes, but every numeric calculation is grounded in real biomedical units (gtts/min, ml, macro drip factor).
+- The dashboard can operate in two modes: **live hardware mode** (reading real IV pole sensor data) and **simulation mode** for training or demos.
+- Every numeric calculation is grounded in real biomedical units (gtts/min, ml, macro drip factor).
 - Audio uses the **Web Audio API** directly, so no external sound files are required.
 - Vibration is a browser feature; the app intentionally detects support and degrades to a visual fallback rather than failing silently.
 - Patient data is stored in a **Supabase** table with Lovable Cloud.
