@@ -296,11 +296,11 @@ Use this flow when presenting to an examiner or stakeholder.
 - All actions are one-click because nurses are often busy and gloved.
 
 ### 7. Future work / extensions
-- Real IoT integration with load-cell sensors or drip chambers.
 - Role-based authentication (head nurse vs. staff nurse).
 - SMS/push notifications to on-call staff.
 - Ward-level analytics and refill prediction.
 - Integration with hospital EMR systems.
+- Multi-ward deployment with a central hospital command center.
 
 ---
 
