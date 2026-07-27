@@ -6,7 +6,9 @@ A medical-grade, centralized **Nursing Station Dashboard** for real-time monitor
 
 ## What the app does
 
-The dashboard simulates a hospital Ward 3 with six smart beds. Each bed is fitted with a virtual IV sensor that reports fluid volume in real time. The system automatically classifies each bed as **Stable**, **Warning**, or **Critical** and alerts the nursing staff with sound, vibration, and visual pulses so no bag runs dry unnoticed.
+The dashboard monitors a hospital Ward 3 with six smart beds. Each bed has a **Smart IV Pole** fitted with a load cell and drip sensor that report fluid volume and flow rate in real time. The system automatically classifies each bed as **Stable**, **Warning**, or **Critical** and alerts the nursing staff with sound, vibration, and visual pulses so no bag runs dry unnoticed.
+
+The dashboard also includes a **Simulation Mode**, so the same interface can be demonstrated or used for staff training without live hardware connected.
 
 ### Core purpose
 - Replace manual IV checks with a live, centralized telemetry view.
