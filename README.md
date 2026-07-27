@@ -306,7 +306,8 @@ Use this flow when presenting to an examiner or stakeholder.
 
 ## Notes for reviewers
 
-- The current IV depletion is a **software simulation** for demonstration purposes, but every numeric calculation is grounded in real biomedical units (gtts/min, ml, macro drip factor).
+- The dashboard can operate in two modes: **live hardware mode** (reading real IV pole sensor data) and **simulation mode** for training or demos.
+- Every numeric calculation is grounded in real biomedical units (gtts/min, ml, macro drip factor).
 - Audio uses the **Web Audio API** directly, so no external sound files are required.
 - Vibration is a browser feature; the app intentionally detects support and degrades to a visual fallback rather than failing silently.
 - Patient data is stored in a **Supabase** table with Lovable Cloud.
