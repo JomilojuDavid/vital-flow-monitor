@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicIvTelemetryRouteImport } from './routes/api/public/iv-telemetry'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicIvTelemetryRoute = ApiPublicIvTelemetryRouteImport.update({
+  id: '/api/public/iv-telemetry',
+  path: '/api/public/iv-telemetry',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/public/iv-telemetry': typeof ApiPublicIvTelemetryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/public/iv-telemetry': typeof ApiPublicIvTelemetryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/public/iv-telemetry': typeof ApiPublicIvTelemetryRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/public/iv-telemetry'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/public/iv-telemetry'
+  id: '__root__' | '/' | '/api/public/iv-telemetry'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiPublicIvTelemetryRoute: typeof ApiPublicIvTelemetryRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/iv-telemetry': {
+      id: '/api/public/iv-telemetry'
+      path: '/api/public/iv-telemetry'
+      fullPath: '/api/public/iv-telemetry'
+      preLoaderRoute: typeof ApiPublicIvTelemetryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiPublicIvTelemetryRoute: ApiPublicIvTelemetryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
