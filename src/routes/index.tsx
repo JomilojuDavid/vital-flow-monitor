@@ -1308,7 +1308,7 @@ function MonitoringView({
             icon={<ShieldCheck className="h-4 w-4" />}
             label="Connected Devices"
             value={String(enriched.length)}
-            sub="1 ESP32 IV pole online"
+            sub="1 IV pole online"
             tone="default"
           />
           <KpiCard
