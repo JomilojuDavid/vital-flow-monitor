@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      device_readings: {
+        Row: {
+          bed_id: string
+          created_at: string
+          device_id: string | null
+          flow_blocked: boolean
+          flow_rate: number
+          id: string
+          recorded_at: string
+          total_ml: number
+          volume_ml: number
+        }
+        Insert: {
+          bed_id: string
+          created_at?: string
+          device_id?: string | null
+          flow_blocked?: boolean
+          flow_rate?: number
+          id?: string
+          recorded_at?: string
+          total_ml: number
+          volume_ml: number
+        }
+        Update: {
+          bed_id?: string
+          created_at?: string
+          device_id?: string | null
+          flow_blocked?: boolean
+          flow_rate?: number
+          id?: string
+          recorded_at?: string
+          total_ml?: number
+          volume_ml?: number
+        }
+        Relationships: []
+      }
       patients: {
         Row: {
           admitted_at: string
