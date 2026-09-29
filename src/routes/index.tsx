@@ -77,16 +77,12 @@ interface Bed {
   ackCritical: boolean;
 }
 
+// Single-bed deployment: one ESP32 smart IV pole is connected to the dashboard.
 const INITIAL_BEDS: Bed[] = [
   { id: "BED 01", name: "BED 01", patient: "Adeyemi J.", ward: "Ward 3 · A", totalMl: 500, currentMl: 412, flowRate: 28, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
-  { id: "BED 02", name: "BED 02", patient: "Komolafe D.", ward: "Ward 3 · A", totalMl: 500, currentMl: 165, flowRate: 32, fluidType: "5% Dextrose", muted: false, ackCritical: false },
-  { id: "BED 03", name: "BED 03", patient: "Ibrahim S.", ward: "Ward 3 · B", totalMl: 1000, currentMl: 740, flowRate: 24, fluidType: "Ringer's Lactate", muted: false, ackCritical: false },
-  { id: "BED 04", name: "BED 04", patient: "Balogun K.", ward: "Ward 3 · B", totalMl: 500, currentMl: 380, flowRate: 30, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
-  { id: "BED 05", name: "BED 05", patient: "Eze C.", ward: "Ward 3 · C", totalMl: 500, currentMl: 78, flowRate: 36, fluidType: "5% Dextrose", muted: false, ackCritical: false },
-  { id: "BED 06", name: "BED 06", patient: "Akpan U.", ward: "Ward 3 · C", totalMl: 1000, currentMl: 612, flowRate: 26, fluidType: "Ringer's Lactate", muted: false, ackCritical: false },
 ];
 
-const SIMULATED_BED_IDS = ["BED 02", "BED 05"];
+const SIMULATED_BED_IDS = ["BED 01"];
 
 function getStatus(percent: number): Status {
   if (percent <= 10) return "critical";
@@ -1306,13 +1302,13 @@ function MonitoringView({
 }) {
   return (
     <>
-      <section className="mx-auto max-w-[1600px] px-4 pt-5 sm:px-6">
+      <section className="mx-auto max-w-[1100px] px-4 pt-5 sm:px-6">
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <KpiCard
             icon={<ShieldCheck className="h-4 w-4" />}
-            label="Total Active Beds"
+            label="Connected Devices"
             value={String(enriched.length)}
-            sub="6 of 6 monitored"
+            sub="1 ESP32 IV pole online"
             tone="default"
           />
           <KpiCard
@@ -1339,14 +1335,14 @@ function MonitoringView({
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+      <section className="mx-auto max-w-[1100px] px-4 py-5 sm:px-6">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Patient Bed Monitoring
           </h2>
-          <p className="text-[11px] text-muted-foreground">Click any card for fluid consumption history</p>
+          <p className="text-[11px] text-muted-foreground">Click the card for fluid consumption history</p>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mx-auto grid max-w-xl grid-cols-1 gap-4">
           {enriched.map((b) => (
             <BedCard
               key={b.id}
