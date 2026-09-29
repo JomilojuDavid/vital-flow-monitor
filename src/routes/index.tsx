@@ -1021,9 +1021,8 @@ function SimulationPanel({
           </div>
           <div className="space-y-3 overflow-y-auto p-3">
             <p className="text-[11px] leading-snug text-muted-foreground">
-              Auto-drain runs on <span className="font-semibold text-foreground">Bed 02</span> and{" "}
-              <span className="font-semibold text-foreground">Bed 05</span>. Use the controls below to
-              set any bed's fluid level manually.
+              Auto-drain runs on <span className="font-semibold text-foreground">Bed 01</span>. Use the
+              controls below to set the bed's fluid level manually.
             </p>
             <button
               onClick={onToggle}
