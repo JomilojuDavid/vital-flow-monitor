@@ -630,12 +630,55 @@ function Dashboard() {
               </div>
             </div>
             <div className="hidden h-8 w-px bg-border md:block" />
-            <div className="hidden items-center gap-2 md:flex">
-              <span className="relative grid h-2.5 w-2.5 place-items-center">
-                <span className="absolute inset-0 rounded-full bg-stable animate-pulse-dot" />
-              </span>
-              <span className="text-xs font-medium text-foreground">System Online</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center rounded-md border border-border bg-surface-elevated p-0.5">
+                {(
+                  [
+                    { k: "sim" as const, label: "Simulation" },
+                    { k: "live" as const, label: "Live Device" },
+                  ]
+                ).map((m) => (
+                  <button
+                    key={m.k}
+                    onClick={() => setMode(m.k)}
+                    className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      mode === m.k
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    aria-pressed={mode === m.k}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <div className="hidden items-center gap-1.5 md:flex">
+                <span className="relative grid h-2.5 w-2.5 place-items-center">
+                  <span
+                    className={`absolute inset-0 rounded-full ${
+                      mode === "sim"
+                        ? "bg-stable animate-pulse-dot"
+                        : liveOffline
+                          ? "bg-critical"
+                          : "bg-stable animate-pulse-dot"
+                    }`}
+                  />
+                </span>
+                <span className="text-xs font-medium text-foreground">
+                  {mode === "sim"
+                    ? "Simulation Mode"
+                    : liveOffline
+                      ? "IV Pole Offline"
+                      : "IV Pole Online"}
+                </span>
+                {mode === "live" && liveState.recordedAt && (
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                    · {Math.max(0, Math.round((now.getTime() - liveState.recordedAt.getTime()) / 1000))}s ago
+                  </span>
+                )}
+              </div>
             </div>
+
             <div className="hidden items-center gap-2 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-xs font-medium tabular-nums lg:flex">
               <Clock className="h-3.5 w-3.5 text-muted-foreground" />
               <span>
