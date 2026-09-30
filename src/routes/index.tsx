@@ -1173,7 +1173,7 @@ function SimulationPanel({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className={`space-y-3 overflow-y-auto p-3 ${locked ? "opacity-60 [&_button:not(:first-child)]:pointer-events-none [&_input]:pointer-events-none" : ""}`}>
+          <div className={`space-y-3 overflow-y-auto p-3 ${locked ? "opacity-60 [&_button]:pointer-events-none [&_input]:pointer-events-none" : ""}`}>
             {locked ? (
               <p className="rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
                 Live Device mode is active — readings come from the IV pole sensor. Switch back to{" "}
