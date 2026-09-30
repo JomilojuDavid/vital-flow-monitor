@@ -202,8 +202,16 @@ type Tab = "monitoring" | "patients";
 function Dashboard() {
   const [beds, setBeds] = useState<Bed[]>(INITIAL_BEDS);
   const [now, setNow] = useState(new Date());
+  const [mode, setMode] = useState<"sim" | "live">("sim");
+  const [liveState, setLiveState] = useState<{
+    recordedAt: Date | null;
+    flowBlocked: boolean;
+    deviceId: string | null;
+    lastError: string | null;
+  }>({ recordedAt: null, flowBlocked: false, deviceId: null, lastError: null });
   const [simOn, setSimOn] = useState(true);
   const [simSpeed, setSimSpeed] = useState(2); // 1x, 2x, 5x
+
   const [logs, setLogs] = useState<AlertLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
   const [openBedId, setOpenBedId] = useState<string | null>(null);
