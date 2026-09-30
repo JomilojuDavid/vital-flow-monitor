@@ -530,6 +530,17 @@ function Dashboard() {
     setBeds((prev) => prev.map((b) => (b.id === id ? { ...b, muted: !b.muted } : b)));
 
   const markRefilled = (id: string) => {
+    // In live mode the real sensor owns the reading — only clear the alarm state.
+    if (mode === "live") {
+      setBeds((prev) =>
+        prev.map((b) => (b.id === id ? { ...b, muted: false, ackCritical: true } : b))
+      );
+      setDismissedBanner((s) => new Set(s).add(id));
+      toast("Refill acknowledged", {
+        description: "Level will update from the IV pole sensor on the next reading.",
+      });
+      return;
+    }
     setBeds((prev) =>
       prev.map((b) =>
         b.id === id
@@ -537,6 +548,7 @@ function Dashboard() {
           : b
       )
     );
+
     setDismissedBanner((s) => {
       const n = new Set(s);
       n.delete(id);
