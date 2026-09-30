@@ -84,6 +84,12 @@ const INITIAL_BEDS: Bed[] = [
 
 const SIMULATED_BED_IDS = ["BED 01"];
 
+// The one bed wired to a physical smart IV pole.
+const LIVE_BED_ID = "BED 01";
+// A live reading older than this is treated as offline.
+const LIVE_STALE_MS = 30_000;
+
+
 function getStatus(percent: number): Status {
   if (percent <= 10) return "critical";
   if (percent <= 30) return "warning";
@@ -202,8 +208,16 @@ type Tab = "monitoring" | "patients";
 function Dashboard() {
   const [beds, setBeds] = useState<Bed[]>(INITIAL_BEDS);
   const [now, setNow] = useState(new Date());
+  const [mode, setMode] = useState<"sim" | "live">("sim");
+  const [liveState, setLiveState] = useState<{
+    recordedAt: Date | null;
+    flowBlocked: boolean;
+    deviceId: string | null;
+    lastError: string | null;
+  }>({ recordedAt: null, flowBlocked: false, deviceId: null, lastError: null });
   const [simOn, setSimOn] = useState(true);
   const [simSpeed, setSimSpeed] = useState(2); // 1x, 2x, 5x
+
   const [logs, setLogs] = useState<AlertLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
   const [openBedId, setOpenBedId] = useState<string | null>(null);
@@ -246,9 +260,9 @@ function Dashboard() {
     return () => window.clearInterval(t);
   }, []);
 
-  // simulation tick
+  // simulation tick — only when the dashboard is NOT reading a real device
   useEffect(() => {
-    if (!simOn) return;
+    if (mode === "live" || !simOn) return;
     const t = window.setInterval(() => {
       setBeds((prev) =>
         prev.map((b) => {
@@ -262,17 +276,96 @@ function Dashboard() {
       );
     }, 1000);
     return () => window.clearInterval(t);
-  }, [simOn, simSpeed]);
+  }, [mode, simOn, simSpeed]);
+
+  // live device telemetry — poll the IV pole endpoint every 4 seconds
+  useEffect(() => {
+    if (mode !== "live") {
+      setLiveState({ recordedAt: null, flowBlocked: false, deviceId: null, lastError: null });
+      return;
+    }
+    let active = true;
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/public/iv-telemetry", { cache: "no-store" });
+        if (!res.ok) throw new Error(`Endpoint returned ${res.status}`);
+        const payload = (await res.json()) as {
+          readings?: {
+            bed_id: string;
+            device_id?: string | null;
+            volume_ml: number;
+            total_ml: number;
+            flow_rate: number | null;
+            flow_blocked: boolean | null;
+            recorded_at: string;
+          }[];
+        };
+        if (!active) return;
+        const reading = payload.readings?.find((r) => r.bed_id === LIVE_BED_ID);
+        if (!reading) {
+          setLiveState((s) => ({ ...s, lastError: "No readings received yet" }));
+          return;
+        }
+        setBeds((prev) =>
+          prev.map((b) =>
+            b.id === LIVE_BED_ID
+              ? {
+                  ...b,
+                  totalMl: reading.total_ml || b.totalMl,
+                  currentMl: Number(Math.max(0, reading.volume_ml).toFixed(1)),
+                  flowRate: reading.flow_rate ?? 0,
+                }
+              : b
+          )
+        );
+        setLiveState({
+          recordedAt: new Date(reading.recorded_at),
+          flowBlocked: Boolean(reading.flow_blocked),
+          deviceId: reading.device_id ?? null,
+          lastError: null,
+        });
+      } catch (e) {
+        if (!active) return;
+        // Keep the last known values on screen; just flag the connection.
+        setLiveState((s) => ({
+          ...s,
+          lastError: e instanceof Error ? e.message : "Connection failed",
+        }));
+      }
+    };
+
+    poll();
+    const t = window.setInterval(poll, 4000);
+    return () => {
+      active = false;
+      window.clearInterval(t);
+    };
+  }, [mode]);
+
+  // a live reading is only trusted for 30 seconds
+  const liveFresh =
+    mode === "live" &&
+    !!liveState.recordedAt &&
+    now.getTime() - liveState.recordedAt.getTime() <= LIVE_STALE_MS;
+  const liveOffline = mode === "live" && !liveFresh;
 
   // derived
   const enriched = useMemo(
     () =>
       beds.map((b) => {
         const percent = (b.currentMl / b.totalMl) * 100;
-        return { ...b, percent, status: getStatus(percent) };
+        const blocked = mode === "live" && liveState.flowBlocked && b.id === LIVE_BED_ID;
+        return {
+          ...b,
+          percent,
+          status: blocked ? ("critical" as Status) : getStatus(percent),
+          flowBlocked: blocked,
+        };
       }),
-    [beds]
+    [beds, mode, liveState.flowBlocked]
   );
+
   const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
 
   const criticalBeds = enriched.filter((b) => b.status === "critical");
@@ -437,6 +530,17 @@ function Dashboard() {
     setBeds((prev) => prev.map((b) => (b.id === id ? { ...b, muted: !b.muted } : b)));
 
   const markRefilled = (id: string) => {
+    // In live mode the real sensor owns the reading — only clear the alarm state.
+    if (mode === "live") {
+      setBeds((prev) =>
+        prev.map((b) => (b.id === id ? { ...b, muted: false, ackCritical: true } : b))
+      );
+      setDismissedBanner((s) => new Set(s).add(id));
+      toast("Refill acknowledged", {
+        description: "Level will update from the IV pole sensor on the next reading.",
+      });
+      return;
+    }
     setBeds((prev) =>
       prev.map((b) =>
         b.id === id
@@ -444,6 +548,7 @@ function Dashboard() {
           : b
       )
     );
+
     setDismissedBanner((s) => {
       const n = new Set(s);
       n.delete(id);
@@ -537,12 +642,55 @@ function Dashboard() {
               </div>
             </div>
             <div className="hidden h-8 w-px bg-border md:block" />
-            <div className="hidden items-center gap-2 md:flex">
-              <span className="relative grid h-2.5 w-2.5 place-items-center">
-                <span className="absolute inset-0 rounded-full bg-stable animate-pulse-dot" />
-              </span>
-              <span className="text-xs font-medium text-foreground">System Online</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center rounded-md border border-border bg-surface-elevated p-0.5">
+                {(
+                  [
+                    { k: "sim" as const, label: "Simulation" },
+                    { k: "live" as const, label: "Live Device" },
+                  ]
+                ).map((m) => (
+                  <button
+                    key={m.k}
+                    onClick={() => setMode(m.k)}
+                    className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      mode === m.k
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    aria-pressed={mode === m.k}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <div className="hidden items-center gap-1.5 md:flex">
+                <span className="relative grid h-2.5 w-2.5 place-items-center">
+                  <span
+                    className={`absolute inset-0 rounded-full ${
+                      mode === "sim"
+                        ? "bg-stable animate-pulse-dot"
+                        : liveOffline
+                          ? "bg-critical"
+                          : "bg-stable animate-pulse-dot"
+                    }`}
+                  />
+                </span>
+                <span className="text-xs font-medium text-foreground">
+                  {mode === "sim"
+                    ? "Simulation Mode"
+                    : liveOffline
+                      ? "IV Pole Offline"
+                      : "IV Pole Online"}
+                </span>
+                {mode === "live" && liveState.recordedAt && (
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                    · {Math.max(0, Math.round((now.getTime() - liveState.recordedAt.getTime()) / 1000))}s ago
+                  </span>
+                )}
+              </div>
             </div>
+
             <div className="hidden items-center gap-2 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-xs font-medium tabular-nums lg:flex">
               <Clock className="h-3.5 w-3.5 text-muted-foreground" />
               <span>
@@ -678,28 +826,32 @@ function Dashboard() {
       <SimulationPanel
         on={simOn}
         speed={simSpeed}
+        locked={mode === "live"}
         onToggle={() => setSimOn((v) => !v)}
         onSpeed={(s) => setSimSpeed(s)}
         beds={enriched}
-        onSetLevel={(id, ml) =>
+        onSetLevel={(id, ml) => {
+          if (mode === "live") return;
           setBeds((prev) =>
             prev.map((b) =>
               b.id === id
                 ? { ...b, currentMl: Math.max(0, Math.min(b.totalMl, Number(ml.toFixed(1)))) }
                 : b
             )
-          )
-        }
-        onResetBed={(id) =>
+          );
+        }}
+        onResetBed={(id) => {
+          if (mode === "live") return;
           setBeds((prev) =>
             prev.map((b) => {
               if (b.id !== id) return b;
               const init = INITIAL_BEDS.find((x) => x.id === id);
               return init ? { ...b, currentMl: init.currentMl } : b;
             })
-          )
-        }
+          );
+        }}
       />
+
 
 
       {/* Alert logs drawer */}
@@ -988,6 +1140,7 @@ function StatusDot({ status }: { status: Status }) {
 function SimulationPanel({
   on,
   speed,
+  locked,
   onToggle,
   onSpeed,
   beds,
@@ -996,6 +1149,7 @@ function SimulationPanel({
 }: {
   on: boolean;
   speed: number;
+  locked: boolean;
   onToggle: () => void;
   onSpeed: (s: number) => void;
   beds: (Bed & { percent: number; status: Status })[];
@@ -1011,7 +1165,7 @@ function SimulationPanel({
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <div className="flex items-center gap-2">
               <span className={`relative grid h-2 w-2 place-items-center`}>
-                <span className={`absolute inset-0 rounded-full ${on ? "bg-stable animate-pulse-dot" : "bg-muted-foreground"}`} />
+                <span className={`absolute inset-0 rounded-full ${on && !locked ? "bg-stable animate-pulse-dot" : "bg-muted-foreground"}`} />
               </span>
               <p className="text-xs font-semibold uppercase tracking-wider">Simulation Panel</p>
             </div>
@@ -1019,11 +1173,19 @@ function SimulationPanel({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="space-y-3 overflow-y-auto p-3">
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              Auto-drain runs on <span className="font-semibold text-foreground">Bed 01</span>. Use the
-              controls below to set the bed's fluid level manually.
-            </p>
+          <div className={`space-y-3 overflow-y-auto p-3 ${locked ? "opacity-60 [&_button]:pointer-events-none [&_input]:pointer-events-none" : ""}`}>
+            {locked ? (
+              <p className="rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+                Live Device mode is active — readings come from the IV pole sensor. Switch back to{" "}
+                <span className="font-semibold text-foreground">Simulation</span> to set levels manually.
+              </p>
+            ) : (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Auto-drain runs on <span className="font-semibold text-foreground">Bed 01</span>. Use the
+                controls below to set the bed's fluid level manually.
+              </p>
+            )}
+
             <button
               onClick={onToggle}
               className={`flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition ${
