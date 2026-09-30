@@ -254,9 +254,9 @@ function Dashboard() {
     return () => window.clearInterval(t);
   }, []);
 
-  // simulation tick
+  // simulation tick — only when the dashboard is NOT reading a real device
   useEffect(() => {
-    if (!simOn) return;
+    if (mode === "live" || !simOn) return;
     const t = window.setInterval(() => {
       setBeds((prev) =>
         prev.map((b) => {
@@ -270,17 +270,96 @@ function Dashboard() {
       );
     }, 1000);
     return () => window.clearInterval(t);
-  }, [simOn, simSpeed]);
+  }, [mode, simOn, simSpeed]);
+
+  // live device telemetry — poll the IV pole endpoint every 4 seconds
+  useEffect(() => {
+    if (mode !== "live") {
+      setLiveState({ recordedAt: null, flowBlocked: false, deviceId: null, lastError: null });
+      return;
+    }
+    let active = true;
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/public/iv-telemetry", { cache: "no-store" });
+        if (!res.ok) throw new Error(`Endpoint returned ${res.status}`);
+        const payload = (await res.json()) as {
+          readings?: {
+            bed_id: string;
+            device_id?: string | null;
+            volume_ml: number;
+            total_ml: number;
+            flow_rate: number | null;
+            flow_blocked: boolean | null;
+            recorded_at: string;
+          }[];
+        };
+        if (!active) return;
+        const reading = payload.readings?.find((r) => r.bed_id === LIVE_BED_ID);
+        if (!reading) {
+          setLiveState((s) => ({ ...s, lastError: "No readings received yet" }));
+          return;
+        }
+        setBeds((prev) =>
+          prev.map((b) =>
+            b.id === LIVE_BED_ID
+              ? {
+                  ...b,
+                  totalMl: reading.total_ml || b.totalMl,
+                  currentMl: Number(Math.max(0, reading.volume_ml).toFixed(1)),
+                  flowRate: reading.flow_rate ?? 0,
+                }
+              : b
+          )
+        );
+        setLiveState({
+          recordedAt: new Date(reading.recorded_at),
+          flowBlocked: Boolean(reading.flow_blocked),
+          deviceId: reading.device_id ?? null,
+          lastError: null,
+        });
+      } catch (e) {
+        if (!active) return;
+        // Keep the last known values on screen; just flag the connection.
+        setLiveState((s) => ({
+          ...s,
+          lastError: e instanceof Error ? e.message : "Connection failed",
+        }));
+      }
+    };
+
+    poll();
+    const t = window.setInterval(poll, 4000);
+    return () => {
+      active = false;
+      window.clearInterval(t);
+    };
+  }, [mode]);
+
+  // a live reading is only trusted for 30 seconds
+  const liveFresh =
+    mode === "live" &&
+    !!liveState.recordedAt &&
+    now.getTime() - liveState.recordedAt.getTime() <= LIVE_STALE_MS;
+  const liveOffline = mode === "live" && !liveFresh;
 
   // derived
   const enriched = useMemo(
     () =>
       beds.map((b) => {
         const percent = (b.currentMl / b.totalMl) * 100;
-        return { ...b, percent, status: getStatus(percent) };
+        const blocked = mode === "live" && liveState.flowBlocked && b.id === LIVE_BED_ID;
+        return {
+          ...b,
+          percent,
+          status: blocked ? ("critical" as Status) : getStatus(percent),
+          flowBlocked: blocked,
+        };
       }),
-    [beds]
+    [beds, mode, liveState.flowBlocked]
   );
+
   const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
 
   const criticalBeds = enriched.filter((b) => b.status === "critical");
