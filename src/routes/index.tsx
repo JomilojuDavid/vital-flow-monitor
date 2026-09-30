@@ -1140,6 +1140,7 @@ function StatusDot({ status }: { status: Status }) {
 function SimulationPanel({
   on,
   speed,
+  locked,
   onToggle,
   onSpeed,
   beds,
@@ -1148,6 +1149,7 @@ function SimulationPanel({
 }: {
   on: boolean;
   speed: number;
+  locked: boolean;
   onToggle: () => void;
   onSpeed: (s: number) => void;
   beds: (Bed & { percent: number; status: Status })[];
@@ -1163,7 +1165,7 @@ function SimulationPanel({
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <div className="flex items-center gap-2">
               <span className={`relative grid h-2 w-2 place-items-center`}>
-                <span className={`absolute inset-0 rounded-full ${on ? "bg-stable animate-pulse-dot" : "bg-muted-foreground"}`} />
+                <span className={`absolute inset-0 rounded-full ${on && !locked ? "bg-stable animate-pulse-dot" : "bg-muted-foreground"}`} />
               </span>
               <p className="text-xs font-semibold uppercase tracking-wider">Simulation Panel</p>
             </div>
@@ -1171,11 +1173,19 @@ function SimulationPanel({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="space-y-3 overflow-y-auto p-3">
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              Auto-drain runs on <span className="font-semibold text-foreground">Bed 01</span>. Use the
-              controls below to set the bed's fluid level manually.
-            </p>
+          <div className={`space-y-3 overflow-y-auto p-3 ${locked ? "opacity-60" : ""}`}>
+            {locked ? (
+              <p className="rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+                Live Device mode is active — readings come from the IV pole sensor. Switch back to{" "}
+                <span className="font-semibold text-foreground">Simulation</span> to set levels manually.
+              </p>
+            ) : (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Auto-drain runs on <span className="font-semibold text-foreground">Bed 01</span>. Use the
+                controls below to set the bed's fluid level manually.
+              </p>
+            )}
+
             <button
               onClick={onToggle}
               className={`flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition ${
