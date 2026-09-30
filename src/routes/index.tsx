@@ -84,6 +84,12 @@ const INITIAL_BEDS: Bed[] = [
 
 const SIMULATED_BED_IDS = ["BED 01"];
 
+// The one bed wired to a physical smart IV pole.
+const LIVE_BED_ID = "BED 01";
+// A live reading older than this is treated as offline.
+const LIVE_STALE_MS = 30_000;
+
+
 function getStatus(percent: number): Status {
   if (percent <= 10) return "critical";
   if (percent <= 30) return "warning";
