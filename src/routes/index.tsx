@@ -771,28 +771,32 @@ function Dashboard() {
       <SimulationPanel
         on={simOn}
         speed={simSpeed}
+        locked={mode === "live"}
         onToggle={() => setSimOn((v) => !v)}
         onSpeed={(s) => setSimSpeed(s)}
         beds={enriched}
-        onSetLevel={(id, ml) =>
+        onSetLevel={(id, ml) => {
+          if (mode === "live") return;
           setBeds((prev) =>
             prev.map((b) =>
               b.id === id
                 ? { ...b, currentMl: Math.max(0, Math.min(b.totalMl, Number(ml.toFixed(1)))) }
                 : b
             )
-          )
-        }
-        onResetBed={(id) =>
+          );
+        }}
+        onResetBed={(id) => {
+          if (mode === "live") return;
           setBeds((prev) =>
             prev.map((b) => {
               if (b.id !== id) return b;
               const init = INITIAL_BEDS.find((x) => x.id === id);
               return init ? { ...b, currentMl: init.currentMl } : b;
             })
-          )
-        }
+          );
+        }}
       />
+
 
 
       {/* Alert logs drawer */}
