@@ -23,8 +23,15 @@ export const Route = createFileRoute("/api/public/iv-telemetry")({
     handlers: {
       // Latest reading per bed, for the dashboard / quick device check.
       GET: async () => {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { data, error } = await supabaseAdmin
+        const { createClient } = await import("@supabase/supabase-js");
+        const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
+        const key =
+          process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        if (!url || !key) return json({ error: "Backend not configured" }, 500);
+        const supabasePublic = createClient(url, key, {
+          auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+        });
+        const { data, error } = await supabasePublic
           .from("device_readings")
           .select("bed_id, volume_ml, total_ml, flow_rate, flow_blocked, recorded_at")
           .order("recorded_at", { ascending: false })
