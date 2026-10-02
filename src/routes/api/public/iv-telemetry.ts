@@ -48,18 +48,6 @@ export const Route = createFileRoute("/api/public/iv-telemetry")({
 
       // ESP32 posts sensor readings here.
       POST: async ({ request }) => {
-        const deviceKey = process.env["IV_DEVICE_KEY"];
-        if (!deviceKey) return json({ error: "Device key not configured" }, 503);
-
-        const provided =
-          request.headers.get("x-device-key") ??
-          request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-          "";
-
-        if (provided.length !== deviceKey.length || provided !== deviceKey) {
-          return json({ error: "Unauthorized device" }, 401);
-        }
-
         let body: unknown;
         try {
           body = await request.json();
