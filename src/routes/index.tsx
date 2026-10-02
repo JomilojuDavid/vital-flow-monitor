@@ -208,7 +208,7 @@ type Tab = "monitoring" | "patients";
 function Dashboard() {
   const [beds, setBeds] = useState<Bed[]>(INITIAL_BEDS);
   const [now, setNow] = useState(new Date());
-  const [mode, setMode] = useState<"sim" | "live">("sim");
+  const [mode, setMode] = useState<"sim" | "live">("live");
   const [liveState, setLiveState] = useState<{
     recordedAt: Date | null;
     flowBlocked: boolean;
