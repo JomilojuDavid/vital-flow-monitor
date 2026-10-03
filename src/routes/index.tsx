@@ -77,6 +77,12 @@ interface Bed {
   ackCritical: boolean;
 }
 
+type EnrichedBed = Bed & {
+  percent: number;
+  status: Status;
+  telemetryAvailable: boolean;
+};
+
 // Single-bed deployment: one ESP32 smart IV pole is connected to the dashboard.
 const INITIAL_BEDS: Bed[] = [
   { id: "BED 01", name: "BED 01", patient: "Adeyemi J.", ward: "Ward 3 · A", totalMl: 500, currentMl: 412, flowRate: 28, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
@@ -278,7 +284,7 @@ function Dashboard() {
     return () => window.clearInterval(t);
   }, [mode, simOn, simSpeed]);
 
-  // live device telemetry — poll the IV pole endpoint every 4 seconds
+  // live device telemetry — poll the latest reading every 3 seconds
   useEffect(() => {
     if (mode !== "live") {
       setLiveState({ recordedAt: null, flowBlocked: false, deviceId: null, lastError: null });
@@ -288,46 +294,49 @@ function Dashboard() {
 
     const poll = async () => {
       try {
-        const res = await fetch("/api/public/iv-telemetry", { cache: "no-store" });
-        if (!res.ok) throw new Error(`Endpoint returned ${res.status}`);
-        const payload = (await res.json()) as {
-          readings?: {
-            bed_id: string;
-            device_id?: string | null;
-            volume_ml: number;
-            total_ml: number;
-            flow_rate: number | null;
-            flow_blocked: boolean | null;
-            recorded_at: string;
-          }[];
-        };
+        const { data: reading, error } = await supabase
+          .from("device_readings")
+          .select("bed_id, device_id, volume_ml, total_ml, flow_rate, flow_blocked, recorded_at")
+          .eq("bed_id", LIVE_BED_ID)
+          .order("recorded_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
         if (!active) return;
-        const reading = payload.readings?.find((r) => r.bed_id === LIVE_BED_ID);
         if (!reading) {
-          setLiveState((s) => ({ ...s, lastError: "No readings received yet" }));
+          setLiveState({
+            recordedAt: null,
+            flowBlocked: false,
+            deviceId: null,
+            lastError: "No readings received yet",
+          });
           return;
+        }
+        const recordedAt = new Date(reading.recorded_at);
+        if (Number.isNaN(recordedAt.getTime())) {
+          throw new Error("Latest telemetry has an invalid recorded_at timestamp");
         }
         setBeds((prev) =>
           prev.map((b) =>
             b.id === LIVE_BED_ID
               ? {
                   ...b,
-                  totalMl: reading.total_ml || b.totalMl,
-                  currentMl: Number(Math.max(0, reading.volume_ml).toFixed(1)),
-                  flowRate: reading.flow_rate ?? 0,
+                  totalMl: reading.total_ml,
+                  currentMl: reading.volume_ml,
+                  flowRate: reading.flow_rate,
                 }
               : b
           )
         );
         setLiveState({
-          recordedAt: new Date(reading.recorded_at),
-          flowBlocked: Boolean(reading.flow_blocked),
+          recordedAt,
+          flowBlocked: reading.flow_blocked,
           deviceId: reading.device_id ?? null,
           lastError: null,
         });
       } catch (e) {
         if (!active) return;
-        // Keep the last known values on screen; just flag the connection.
+        console.error("[Telemetry] Unable to read latest device_readings record", e);
         setLiveState((s) => ({
           ...s,
           lastError: e instanceof Error ? e.message : "Connection failed",
@@ -336,7 +345,7 @@ function Dashboard() {
     };
 
     poll();
-    const t = window.setInterval(poll, 4000);
+    const t = window.setInterval(poll, 3000);
     return () => {
       active = false;
       window.clearInterval(t);
@@ -344,38 +353,49 @@ function Dashboard() {
   }, [mode]);
 
   // a live reading is only trusted for 30 seconds
+  const liveAge = liveState.recordedAt
+    ? now.getTime() - liveState.recordedAt.getTime()
+    : null;
   const liveFresh =
     mode === "live" &&
-    !!liveState.recordedAt &&
-    now.getTime() - liveState.recordedAt.getTime() <= LIVE_STALE_MS;
+    liveAge !== null &&
+    liveAge >= 0 &&
+    liveAge <= LIVE_STALE_MS;
   const liveOffline = mode === "live" && !liveFresh;
 
   // derived
   const enriched = useMemo(
     () =>
       beds.map((b) => {
-        const percent = (b.currentMl / b.totalMl) * 100;
-        const blocked = mode === "live" && liveState.flowBlocked && b.id === LIVE_BED_ID;
+        const telemetryAvailable = mode !== "live" || liveState.recordedAt !== null;
+        const percent = telemetryAvailable ? (b.currentMl / b.totalMl) * 100 : 0;
+        const blocked =
+          telemetryAvailable &&
+          mode === "live" &&
+          liveState.flowBlocked &&
+          b.id === LIVE_BED_ID;
         return {
           ...b,
           percent,
-          status: blocked ? ("critical" as Status) : getStatus(percent),
+          status: blocked ? ("critical" as Status) : telemetryAvailable ? getStatus(percent) : "stable",
           flowBlocked: blocked,
+          telemetryAvailable,
         };
       }),
-    [beds, mode, liveState.flowBlocked]
+    [beds, mode, liveState.flowBlocked, liveState.recordedAt]
   );
 
   const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
 
   const criticalBeds = enriched.filter((b) => b.status === "critical");
-  const stableCount = enriched.filter((b) => b.status === "stable").length;
+  const stableCount = enriched.filter((b) => b.telemetryAvailable && b.status === "stable").length;
   const avgRefill = useMemo(() => {
     // avg minutes till empty across all beds
-    const mins = enriched.map((b) => {
+    const mins = enriched.filter((b) => b.telemetryAvailable).map((b) => {
       const mlPerMin = b.flowRate / 20;
       return mlPerMin > 0 ? b.currentMl / mlPerMin : 0;
     });
+    if (mins.length === 0) return null;
     const avg = mins.reduce((a, c) => a + c, 0) / Math.max(1, mins.length);
     return Math.round(avg);
   }, [enriched]);
@@ -806,6 +826,9 @@ function Dashboard() {
           criticalBeds={criticalBeds}
           stableCount={stableCount}
           avgRefill={avgRefill}
+          liveMode={mode === "live"}
+          online={mode === "sim" || liveFresh}
+          waitingForTelemetry={mode === "live" && liveState.recordedAt === null}
           onMute={toggleMute}
           onRefill={markRefilled}
           onOpen={(id) => setOpenBedId(id)}
@@ -899,7 +922,11 @@ function Dashboard() {
 
       {/* Bed detail modal */}
       {openBed && (
-        <BedDetailModal bed={openBed} onClose={() => setOpenBedId(null)} />
+        <BedDetailModal
+          bed={openBed}
+          historyEnabled={mode === "sim"}
+          onClose={() => setOpenBedId(null)}
+        />
       )}
     </div>
   );
@@ -954,11 +981,13 @@ function KpiCard({
 
 function BedCard({
   bed,
+  liveMode,
   onMute,
   onRefill,
   onOpen,
 }: {
-  bed: Bed & { percent: number; status: Status };
+  bed: EnrichedBed;
+  liveMode: boolean;
   onMute: () => void;
   onRefill: () => void;
   onOpen: () => void;
@@ -992,7 +1021,7 @@ function BedCard({
           <p className="mt-0.5 truncate text-sm text-foreground">{bed.patient}</p>
           <p className="truncate text-[11px] text-muted-foreground">{bed.fluidType}</p>
         </div>
-        <StatusBadge status={status} muted={bed.muted} />
+        <StatusBadge status={status} muted={bed.muted} waiting={!bed.telemetryAvailable} />
       </header>
 
       <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3">
@@ -1007,7 +1036,7 @@ function BedCard({
           <div className="relative mx-2 mb-2 h-[120px] rounded-md border border-border bg-white">
             <div
               className={`absolute bottom-0 left-0 right-0 ${barColor} transition-all duration-700 ${status === "critical" ? "animate-critical-flash" : ""}`}
-              style={{ height: `${percent}%` }}
+              style={{ height: `${bed.telemetryAvailable ? percent : 0}%` }}
             >
               <div className="absolute -top-1 left-0 right-0 h-2 animate-liquid-wave opacity-60">
                 <svg viewBox="0 0 100 10" preserveAspectRatio="none" className="h-full w-[120%]">
@@ -1023,16 +1052,36 @@ function BedCard({
             </div>
           </div>
           <p className="pb-1.5 text-center text-[10px] font-semibold tabular-nums text-foreground">
-            {percent.toFixed(0)}%
+            {bed.telemetryAvailable
+              ? `${percent.toFixed(liveMode ? 2 : 0)}%`
+              : "—"}
           </p>
         </button>
 
         <div className="grid grid-cols-2 gap-2">
-          <Metric label="Current Vol" value={`${bed.currentMl.toFixed(0)} ml`} sub={`of ${bed.totalMl} ml`} icon={<Droplet className="h-3 w-3" />} />
-          <Metric label="Flow Rate" value={`${bed.flowRate}`} sub="gtts/min" icon={<Activity className="h-3 w-3" />} />
+          <Metric
+            label="Current Vol"
+            value={
+              bed.telemetryAvailable
+                ? `${bed.currentMl.toFixed(liveMode ? 1 : 0)} ml`
+                : "Waiting"
+            }
+            sub={bed.telemetryAvailable ? `of ${bed.totalMl} ml` : "No telemetry"}
+            icon={<Droplet className="h-3 w-3" />}
+          />
+          <Metric
+            label="Flow Rate"
+            value={bed.telemetryAvailable ? `${bed.flowRate}` : "—"}
+            sub="gtts/min"
+            icon={<Activity className="h-3 w-3" />}
+          />
           <Metric
             label="Time Remaining"
-            value={timeRemaining(bed.currentMl, bed.flowRate)}
+            value={
+              bed.telemetryAvailable
+                ? timeRemaining(bed.currentMl, bed.flowRate)
+                : "Waiting"
+            }
             sub="@ current rate"
             icon={<Clock className="h-3 w-3" />}
             span2
@@ -1103,13 +1152,23 @@ function Metric({
   );
 }
 
-function StatusBadge({ status, muted }: { status: Status; muted: boolean }) {
+function StatusBadge({
+  status,
+  muted,
+  waiting = false,
+}: {
+  status: Status;
+  muted: boolean;
+  waiting?: boolean;
+}) {
   const map: Record<Status, { label: string; cls: string }> = {
     stable: { label: "Stable", cls: "bg-stable text-stable-foreground" },
     warning: { label: "Warning", cls: "bg-warning text-warning-foreground" },
     critical: { label: "Critical", cls: "bg-critical text-critical-foreground" },
   };
-  const m = map[status];
+  const m = waiting
+    ? { label: "Waiting", cls: "bg-secondary text-muted-foreground" }
+    : map[status];
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${m.cls}`}>
@@ -1152,7 +1211,7 @@ function SimulationPanel({
   locked: boolean;
   onToggle: () => void;
   onSpeed: (s: number) => void;
-  beds: (Bed & { percent: number; status: Status })[];
+  beds: EnrichedBed[];
   onSetLevel: (id: string, ml: number) => void;
   onResetBed: (id: string) => void;
 }) {
@@ -1240,10 +1299,17 @@ function SimulationPanel({
                           </span>
                         </div>
                         <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
-                          {Math.round(b.currentMl)}/{b.totalMl} ml
+                          {b.telemetryAvailable
+                            ? `${Math.round(b.currentMl)}/${b.totalMl} ml`
+                            : "Waiting"}
                         </span>
                       </button>
                       {isOpen && (
+                        locked && !b.telemetryAvailable ? (
+                          <p className="border-t border-border px-2.5 py-2 text-[11px] text-muted-foreground">
+                            Waiting for telemetry from the IV pole.
+                          </p>
+                        ) : (
                         <div className="space-y-2 border-t border-border px-2.5 py-2">
                           <input
                             type="range"
@@ -1291,6 +1357,7 @@ function SimulationPanel({
                             </div>
                           </div>
                         </div>
+                        )
                       )}
                     </div>
                   );
@@ -1316,13 +1383,16 @@ function SimulationPanel({
 
 function BedDetailModal({
   bed,
+  historyEnabled,
   onClose,
 }: {
-  bed: Bed & { percent: number; status: Status };
+  bed: EnrichedBed;
+  historyEnabled: boolean;
   onClose: () => void;
 }) {
   // generate mock historical consumption: 30 mins, descending from a starting level toward current
   const data = useMemo(() => {
+    if (!historyEnabled || !bed.telemetryAvailable) return [];
     const points: { t: string; volume: number }[] = [];
     const mlPerMin = bed.flowRate / 20;
     let v = bed.currentMl + mlPerMin * 30;
@@ -1335,7 +1405,7 @@ function BedDetailModal({
     }
     points[points.length - 1].volume = bed.currentMl;
     return points;
-  }, [bed]);
+  }, [bed, historyEnabled]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -1364,16 +1434,25 @@ function BedDetailModal({
         </header>
 
         <div className="grid grid-cols-2 gap-3 px-5 pt-4 sm:grid-cols-4">
-          <MiniStat label="Remaining" value={`${bed.currentMl.toFixed(0)} ml`} />
-          <MiniStat label="Capacity" value={`${bed.totalMl} ml`} />
-          <MiniStat label="Flow Rate" value={`${bed.flowRate} gtts/min`} />
-          <MiniStat label="ETA Empty" value={timeRemaining(bed.currentMl, bed.flowRate)} />
+          <MiniStat label="Remaining" value={bed.telemetryAvailable ? `${bed.currentMl.toFixed(0)} ml` : "Waiting"} />
+          <MiniStat label="Capacity" value={bed.telemetryAvailable ? `${bed.totalMl} ml` : "—"} />
+          <MiniStat label="Flow Rate" value={bed.telemetryAvailable ? `${bed.flowRate} gtts/min` : "—"} />
+          <MiniStat label="ETA Empty" value={bed.telemetryAvailable ? timeRemaining(bed.currentMl, bed.flowRate) : "—"} />
         </div>
 
         <div className="px-5 pb-5 pt-3">
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Fluid Consumption · Last 30 Minutes
+            {historyEnabled ? "Fluid Consumption · Last 30 Minutes" : "Historical telemetry"}
           </p>
+          {!historyEnabled ? (
+            <div className="grid h-64 w-full place-items-center rounded-md border border-border bg-surface-elevated text-sm text-muted-foreground">
+              Historical readings are not available in Live Device mode.
+            </div>
+          ) : !bed.telemetryAvailable ? (
+            <div className="grid h-64 w-full place-items-center rounded-md border border-border bg-surface-elevated text-sm text-muted-foreground">
+              Waiting for telemetry.
+            </div>
+          ) : (
           <div className="h-64 w-full rounded-md border border-border bg-surface-elevated p-2">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
@@ -1399,6 +1478,7 @@ function BedDetailModal({
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -1449,14 +1529,20 @@ function MonitoringView({
   criticalBeds,
   stableCount,
   avgRefill,
+  liveMode,
+  online,
+  waitingForTelemetry,
   onMute,
   onRefill,
   onOpen,
 }: {
-  enriched: (Bed & { percent: number; status: Status })[];
-  criticalBeds: (Bed & { percent: number; status: Status })[];
+  enriched: EnrichedBed[];
+  criticalBeds: EnrichedBed[];
   stableCount: number;
-  avgRefill: number;
+  avgRefill: number | null;
+  liveMode: boolean;
+  online: boolean;
+  waitingForTelemetry: boolean;
   onMute: (id: string) => void;
   onRefill: (id: string) => void;
   onOpen: (id: string) => void;
@@ -1468,8 +1554,14 @@ function MonitoringView({
           <KpiCard
             icon={<ShieldCheck className="h-4 w-4" />}
             label="Connected Devices"
-            value={String(enriched.length)}
-            sub="1 IV pole online"
+            value={String(online ? enriched.length : 0)}
+            sub={
+              online
+                ? "1 IV pole online"
+                : waitingForTelemetry
+                  ? "Waiting for telemetry"
+                  : "IV pole offline"
+            }
             tone="default"
           />
           <KpiCard
@@ -1489,7 +1581,7 @@ function MonitoringView({
           <KpiCard
             icon={<Gauge className="h-4 w-4" />}
             label="Avg. Time to Refill"
-            value={`${avgRefill} min`}
+            value={avgRefill === null ? "—" : `${avgRefill} min`}
             sub="Across all active beds"
             tone="default"
           />
@@ -1508,6 +1600,7 @@ function MonitoringView({
             <BedCard
               key={b.id}
               bed={b}
+              liveMode={liveMode}
               onMute={() => onMute(b.id)}
               onRefill={() => onRefill(b.id)}
               onOpen={() => onOpen(b.id)}
