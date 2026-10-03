@@ -8,12 +8,10 @@ A medical-grade, centralized **Nursing Station Dashboard** for real-time monitor
 
 The dashboard monitors a hospital Ward 3 with six smart beds. Each bed has a **Smart IV Pole** fitted with a load cell and drip sensor that report fluid volume and flow rate in real time. The system automatically classifies each bed as **Stable**, **Warning**, or **Critical** and alerts the nursing staff with sound, vibration, and visual pulses so no bag runs dry unnoticed.
 
-The dashboard also includes a **Simulation Mode**, so the same interface can be demonstrated or used for staff training without live hardware connected.
-
 ### Core purpose
 - Replace manual IV checks with a live, centralized telemetry view.
 - Reduce the risk of fluid exhaustion, blocked lines, or delayed refills.
-- Give nurses one-click actions: mute alarms, mark a bag as refilled, view patient records, and simulate fluid levels for training.
+- Give nurses one-click actions: mute alarms, acknowledge refills, and view patient records.
 
 ---
 
@@ -48,8 +46,8 @@ The dashboard also includes a **Simulation Mode**, so the same interface can be 
 
 ### 4. Bed actions
 - **Mute Alarm** — silences the chime/vibration for that bed.
-- **Mark Refilled** — resets the bag to 100%, clears the critical state, and logs the event.
-- **Details** — opens a modal with a mocked fluid-consumption trend chart (area chart over time).
+- **Mark Refilled** — acknowledges the refill; the bag level updates from the next IV pole reading.
+- **Details** — opens a modal with current telemetry and historical telemetry availability.
 
 ### 5. Patient records (cloud-backed)
 - A second tab, **Patient Records**, lists every admitted patient.
@@ -58,13 +56,9 @@ The dashboard also includes a **Simulation Mode**, so the same interface can be 
 - Patients can be **discharged** with one click; the delete is synced to the cloud.
 - Toast notifications confirm success or display errors.
 
-### 6. Simulation & training controls
-- A floating **Simulation Panel** lets demo users:
-  - Turn the IV drip simulation on/off
-  - Change speed: 1x, 2x, 5x
-  - Edit any bed's exact fluid level with a slider or number input
-  - Apply quick presets: Full, 50%, Warning, Critical, Reset
-- This makes the project easy to demonstrate because you can deliberately push any bed into a critical state.
+### 6. Live device status
+- The dashboard reads the latest IV pole telemetry and displays whether the device is online, offline, or awaiting its first reading.
+- Fluid levels are supplied by the connected IV pole; they cannot be edited from the dashboard.
 
 ### 7. Dark mode
 - Toggle between a clean clinical light theme and a low-light dark theme.
@@ -80,7 +74,6 @@ The dashboard also includes a **Simulation Mode**, so the same interface can be 
 | Build tool | Vite 7 |
 | Styling | Tailwind CSS v4 + custom CSS design tokens |
 | UI primitives | shadcn/ui components + Radix UI |
-| Charts | Recharts |
 | Notifications | Sonner |
 | Icons | Lucide React |
 | Backend / data | Lovable Cloud (Supabase) |
@@ -95,11 +88,10 @@ The dashboard also includes a **Simulation Mode**, so the same interface can be 
 - **`PatientRecord`** — cloud-persisted patient demographics and admission details.
 - **`AlertLog`** — in-memory event history for the current session (warnings, criticals, refills).
 
-### Simulation engine
-- A `setInterval` ticks every second.
-- For configured beds (`BED 02` and `BED 05`), it subtracts `flowRate / 20 * simSpeed` milliliters per tick.
-- The divisor `20` assumes a standard macro drip set (20 gtts ≈ 1 ml), so `gtts/min` can be converted into `ml/min`.
-- This gives realistic biomedical numbers: a 500 ml bag at 30 gtts/min drains in roughly 5.5 hours, but the simulation accelerates that for demo visibility.
+### Live telemetry
+- The dashboard polls the latest device reading every three seconds.
+- Readings older than 30 seconds are treated as offline.
+- The dashboard displays the volume, flow rate, and blocked-flow state reported by the connected IV pole.
 
 ### Status classification
 ```
@@ -130,7 +122,7 @@ percent > 30%   → stable
 
 ## Hardware integration: IV pole sensor system
 
-The dashboard is not just a simulation: it is designed to receive live telemetry from a network of smart IV poles installed at each bedside. The section below describes the end-to-end hardware-to-software connection that makes the system fully functional in a real hospital ward.
+The dashboard receives live telemetry from a network of smart IV poles installed at each bedside. The section below describes the end-to-end hardware-to-software connection that makes the system fully functional in a real hospital ward.
 
 ### 1. Overview of the connected system
 - Each bed has a dedicated **Smart IV Pole** fitted with sensors and a small edge controller.
@@ -207,8 +199,7 @@ Dashboard bed card updates
 - Patient data is encrypted in transit and at rest in Lovable Cloud.
 
 ### 9. From prototype to production ward
-- During development, the dashboard uses the **Simulation Panel** to mimic sensor data so the software can be tested without hardware.
-- In the deployed ward, the simulation is disabled and the dashboard reads live payloads from the MQTT broker.
+- The dashboard reads live payloads from the MQTT broker through the connected telemetry service.
 - The same `bed_id` used in the hardware JSON is the same `bed_id` shown in the dashboard, so mapping is straightforward.
 
 ---
@@ -220,7 +211,7 @@ Dashboard bed card updates
 ├── src/
 │   ├── routes/
 │   │   ├── __root.tsx        # Root layout, theme CSS, toaster provider, error/404 boundaries
-│   │   ├── index.tsx         # Main dashboard: tabs, monitoring, patients, simulation, alerts
+│   │   ├── index.tsx         # Main dashboard: live monitoring, patients, and alerts
 │   │   └── README.md         # TanStack routing conventions
 │   ├── components/ui/        # shadcn/ui primitives (Dialog, Toast, Button, etc.)
 │   ├── integrations/supabase/# Auto-generated Supabase clients and middleware
@@ -275,15 +266,14 @@ Use this flow when presenting to an examiner or stakeholder.
 - Mention the visual IV bag: the liquid column height matches the percentage, so nurses can read status from across a room.
 
 ### 3. Trigger a critical alert
-- Open the **Simulation Panel**.
-- Drag `BED 05` (or any bed) to a critical percentage, or click the **Critical** preset.
+- Use a connected IV pole or an authorized test telemetry source to report a critical fluid level or blocked flow.
 - Watch the global banner slide down, the card pulse red, and hear the chime.
 - If on a supported Android device, enable vibration and feel the triple buzz; on iOS/desktop, point out the red screen-edge pulse fallback.
 
 ### 4. Resolve the alert
 - Click **Mark Refilled** on the critical card.
-- The bag resets to 100%, the banner disappears, and the event is logged.
-- Open the **Alert Logs** drawer to show the logged history.
+- The alert is acknowledged and the displayed level updates from the next IV pole reading.
+- Open the **Alert Logs** drawer to review the alert history.
 
 ### 5. Show patient records
 - Switch to the **Patient Records** tab.
@@ -308,7 +298,7 @@ Use this flow when presenting to an examiner or stakeholder.
 
 ## Notes for reviewers
 
-- The dashboard can operate in two modes: **live hardware mode** (reading real IV pole sensor data) and **simulation mode** for training or demos.
+- The dashboard operates in live hardware mode and reads IV pole sensor data.
 - Every numeric calculation is grounded in real biomedical units (gtts/min, ml, macro drip factor).
 - Audio uses the **Web Audio API** directly, so no external sound files are required.
 - Vibration is a browser feature; the app intentionally detects support and degrades to a visual fallback rather than failing silently.

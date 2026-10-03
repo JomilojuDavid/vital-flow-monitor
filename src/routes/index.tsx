@@ -4,7 +4,6 @@ import {
   Activity,
   AlertTriangle,
   BellOff,
-  BellRing,
   Bell,
   CheckCircle2,
   Clock,
@@ -13,8 +12,6 @@ import {
   Gauge,
   History,
   Moon,
-  Pause,
-  Play,
   Plus,
   ShieldCheck,
   Sun,
@@ -25,17 +22,6 @@ import {
   VibrateOff,
   X,
 } from "lucide-react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  Area,
-  AreaChart,
-} from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -87,8 +73,6 @@ type EnrichedBed = Bed & {
 const INITIAL_BEDS: Bed[] = [
   { id: "BED 01", name: "BED 01", patient: "Adeyemi J.", ward: "Ward 3 · A", totalMl: 500, currentMl: 412, flowRate: 28, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
 ];
-
-const SIMULATED_BED_IDS = ["BED 01"];
 
 // The one bed wired to a physical smart IV pole.
 const LIVE_BED_ID = "BED 01";
@@ -214,15 +198,12 @@ type Tab = "monitoring" | "patients";
 function Dashboard() {
   const [beds, setBeds] = useState<Bed[]>(INITIAL_BEDS);
   const [now, setNow] = useState(new Date());
-  const [mode, setMode] = useState<"sim" | "live">("live");
   const [liveState, setLiveState] = useState<{
     recordedAt: Date | null;
     flowBlocked: boolean;
     deviceId: string | null;
     lastError: string | null;
   }>({ recordedAt: null, flowBlocked: false, deviceId: null, lastError: null });
-  const [simOn, setSimOn] = useState(true);
-  const [simSpeed, setSimSpeed] = useState(2); // 1x, 2x, 5x
 
   const [logs, setLogs] = useState<AlertLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -266,30 +247,8 @@ function Dashboard() {
     return () => window.clearInterval(t);
   }, []);
 
-  // simulation tick — only when the dashboard is NOT reading a real device
-  useEffect(() => {
-    if (mode === "live" || !simOn) return;
-    const t = window.setInterval(() => {
-      setBeds((prev) =>
-        prev.map((b) => {
-          if (!SIMULATED_BED_IDS.includes(b.id)) return b;
-          const mlPerMin = b.flowRate / 20;
-          // accelerate so demo is observable: 1 tick ~ 1 simulated minute * simSpeed
-          const drop = mlPerMin * simSpeed;
-          const next = Math.max(0, b.currentMl - drop);
-          return { ...b, currentMl: Number(next.toFixed(1)) };
-        })
-      );
-    }, 1000);
-    return () => window.clearInterval(t);
-  }, [mode, simOn, simSpeed]);
-
   // live device telemetry — poll the latest reading every 3 seconds
   useEffect(() => {
-    if (mode !== "live") {
-      setLiveState({ recordedAt: null, flowBlocked: false, deviceId: null, lastError: null });
-      return;
-    }
     let active = true;
 
     const poll = async () => {
@@ -350,28 +309,24 @@ function Dashboard() {
       active = false;
       window.clearInterval(t);
     };
-  }, [mode]);
+  }, []);
 
   // a live reading is only trusted for 30 seconds
   const liveAge = liveState.recordedAt
     ? now.getTime() - liveState.recordedAt.getTime()
     : null;
   const liveFresh =
-    mode === "live" &&
-    liveAge !== null &&
-    liveAge >= 0 &&
-    liveAge <= LIVE_STALE_MS;
-  const liveOffline = mode === "live" && !liveFresh;
+    liveAge !== null && liveAge >= 0 && liveAge <= LIVE_STALE_MS;
+  const liveOffline = !liveFresh;
 
   // derived
   const enriched = useMemo(
     () =>
       beds.map((b) => {
-        const telemetryAvailable = mode !== "live" || liveState.recordedAt !== null;
+        const telemetryAvailable = liveState.recordedAt !== null;
         const percent = telemetryAvailable ? (b.currentMl / b.totalMl) * 100 : 0;
         const blocked =
           telemetryAvailable &&
-          mode === "live" &&
           liveState.flowBlocked &&
           b.id === LIVE_BED_ID;
         return {
@@ -382,7 +337,7 @@ function Dashboard() {
           telemetryAvailable,
         };
       }),
-    [beds, mode, liveState.flowBlocked, liveState.recordedAt]
+    [beds, liveState.flowBlocked, liveState.recordedAt]
   );
 
   const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
@@ -550,41 +505,13 @@ function Dashboard() {
     setBeds((prev) => prev.map((b) => (b.id === id ? { ...b, muted: !b.muted } : b)));
 
   const markRefilled = (id: string) => {
-    // In live mode the real sensor owns the reading — only clear the alarm state.
-    if (mode === "live") {
-      setBeds((prev) =>
-        prev.map((b) => (b.id === id ? { ...b, muted: false, ackCritical: true } : b))
-      );
-      setDismissedBanner((s) => new Set(s).add(id));
-      toast("Refill acknowledged", {
-        description: "Level will update from the IV pole sensor on the next reading.",
-      });
-      return;
-    }
     setBeds((prev) =>
-      prev.map((b) =>
-        b.id === id
-          ? { ...b, currentMl: b.totalMl, muted: false, ackCritical: false }
-          : b
-      )
+      prev.map((b) => (b.id === id ? { ...b, muted: false, ackCritical: true } : b))
     );
-
-    setDismissedBanner((s) => {
-      const n = new Set(s);
-      n.delete(id);
-      return n;
+    setDismissedBanner((s) => new Set(s).add(id));
+    toast("Refill acknowledged", {
+      description: "Level will update from the IV pole sensor on the next reading.",
     });
-    setLogs((l) => [
-      {
-        id: `${id}-refill-${Date.now()}`,
-        bedId: id,
-        patient: beds.find((b) => b.id === id)?.patient ?? "",
-        level: "stable" as const,
-        message: `${id} marked refilled — new bag installed.`,
-        at: new Date(),
-      },
-      ...l,
-    ].slice(0, 50));
   };
 
   return (
@@ -663,47 +590,18 @@ function Dashboard() {
             </div>
             <div className="hidden h-8 w-px bg-border md:block" />
             <div className="flex items-center gap-2">
-              <div className="flex items-center rounded-md border border-border bg-surface-elevated p-0.5">
-                {(
-                  [
-                    { k: "sim" as const, label: "Simulation" },
-                    { k: "live" as const, label: "Live Device" },
-                  ]
-                ).map((m) => (
-                  <button
-                    key={m.k}
-                    onClick={() => setMode(m.k)}
-                    className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                      mode === m.k
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    aria-pressed={mode === m.k}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
               <div className="hidden items-center gap-1.5 md:flex">
                 <span className="relative grid h-2.5 w-2.5 place-items-center">
                   <span
                     className={`absolute inset-0 rounded-full ${
-                      mode === "sim"
-                        ? "bg-stable animate-pulse-dot"
-                        : liveOffline
-                          ? "bg-critical"
-                          : "bg-stable animate-pulse-dot"
+                      liveOffline ? "bg-critical" : "bg-stable animate-pulse-dot"
                     }`}
                   />
                 </span>
                 <span className="text-xs font-medium text-foreground">
-                  {mode === "sim"
-                    ? "Simulation Mode"
-                    : liveOffline
-                      ? "IV Pole Offline"
-                      : "IV Pole Online"}
+                  {liveOffline ? "IV Pole Offline" : "IV Pole Online"}
                 </span>
-                {mode === "live" && liveState.recordedAt && (
+                {liveState.recordedAt && (
                   <span className="text-[11px] text-muted-foreground tabular-nums">
                     · {Math.max(0, Math.round((now.getTime() - liveState.recordedAt.getTime()) / 1000))}s ago
                   </span>
@@ -826,9 +724,9 @@ function Dashboard() {
           criticalBeds={criticalBeds}
           stableCount={stableCount}
           avgRefill={avgRefill}
-          liveMode={mode === "live"}
-          online={mode === "sim" || liveFresh}
-          waitingForTelemetry={mode === "live" && liveState.recordedAt === null}
+          liveMode
+          online={liveFresh}
+          waitingForTelemetry={liveState.recordedAt === null}
           onMute={toggleMute}
           onRefill={markRefilled}
           onOpen={(id) => setOpenBedId(id)}
@@ -842,41 +740,6 @@ function Dashboard() {
           onRemove={removePatient}
         />
       )}
-
-
-
-      {/* Simulation panel (floating) */}
-      <SimulationPanel
-        on={simOn}
-        speed={simSpeed}
-        locked={mode === "live"}
-        onToggle={() => setSimOn((v) => !v)}
-        onSpeed={(s) => setSimSpeed(s)}
-        beds={enriched}
-        onSetLevel={(id, ml) => {
-          if (mode === "live") return;
-          setBeds((prev) =>
-            prev.map((b) =>
-              b.id === id
-                ? { ...b, currentMl: Math.max(0, Math.min(b.totalMl, Number(ml.toFixed(1)))) }
-                : b
-            )
-          );
-        }}
-        onResetBed={(id) => {
-          if (mode === "live") return;
-          setBeds((prev) =>
-            prev.map((b) => {
-              if (b.id !== id) return b;
-              const init = INITIAL_BEDS.find((x) => x.id === id);
-              return init ? { ...b, currentMl: init.currentMl } : b;
-            })
-          );
-        }}
-      />
-
-
-
       {/* Alert logs drawer */}
       {showLogs && (
         <div className="fixed inset-0 z-50 flex">
@@ -924,7 +787,6 @@ function Dashboard() {
       {openBed && (
         <BedDetailModal
           bed={openBed}
-          historyEnabled={mode === "sim"}
           onClose={() => setOpenBedId(null)}
         />
       )}
@@ -1194,219 +1056,15 @@ function StatusDot({ status }: { status: Status }) {
   return <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${cls}`} />;
 }
 
-// ---------- Simulation Panel ----------
-
-function SimulationPanel({
-  on,
-  speed,
-  locked,
-  onToggle,
-  onSpeed,
-  beds,
-  onSetLevel,
-  onResetBed,
-}: {
-  on: boolean;
-  speed: number;
-  locked: boolean;
-  onToggle: () => void;
-  onSpeed: (s: number) => void;
-  beds: EnrichedBed[];
-  onSetLevel: (id: string, ml: number) => void;
-  onResetBed: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(true);
-  const [expandedBed, setExpandedBed] = useState<string | null>(null);
-  return (
-    <div className="fixed bottom-4 right-4 z-30">
-      {open ? (
-        <div className="flex max-h-[80vh] w-80 flex-col rounded-xl border border-border bg-surface shadow-xl">
-          <div className="flex items-center justify-between border-b border-border px-3 py-2">
-            <div className="flex items-center gap-2">
-              <span className={`relative grid h-2 w-2 place-items-center`}>
-                <span className={`absolute inset-0 rounded-full ${on && !locked ? "bg-stable animate-pulse-dot" : "bg-muted-foreground"}`} />
-              </span>
-              <p className="text-xs font-semibold uppercase tracking-wider">Simulation Panel</p>
-            </div>
-            <button onClick={() => setOpen(false)} className="rounded p-1 hover:bg-secondary" aria-label="Collapse">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className={`space-y-3 overflow-y-auto p-3 ${locked ? "opacity-60 [&_button]:pointer-events-none [&_input]:pointer-events-none" : ""}`}>
-            {locked ? (
-              <p className="rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
-                Live Device mode is active — readings come from the IV pole sensor. Switch back to{" "}
-                <span className="font-semibold text-foreground">Simulation</span> to set levels manually.
-              </p>
-            ) : (
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Auto-drain runs on <span className="font-semibold text-foreground">Bed 01</span>. Use the
-                controls below to set the bed's fluid level manually.
-              </p>
-            )}
-
-            <button
-              onClick={onToggle}
-              className={`flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition ${
-                on ? "bg-critical text-critical-foreground hover:opacity-90" : "bg-stable text-stable-foreground hover:opacity-90"
-              }`}
-            >
-              {on ? <><Pause className="h-3.5 w-3.5" /> Pause Simulation</> : <><Play className="h-3.5 w-3.5" /> Start Simulation</>}
-            </button>
-            <div>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Speed</p>
-              <div className="grid grid-cols-3 gap-1.5">
-                {[1, 2, 5].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => onSpeed(s)}
-                    className={`rounded-md border px-2 py-1.5 text-xs font-semibold transition ${
-                      speed === s
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-surface hover:bg-secondary"
-                    }`}
-                  >
-                    {s}x
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-t border-border pt-3">
-              <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                Manual fluid levels
-              </p>
-              <div className="space-y-1.5">
-                {beds.map((b) => {
-                  const isOpen = expandedBed === b.id;
-                  const dotColor =
-                    b.status === "critical"
-                      ? "bg-critical"
-                      : b.status === "warning"
-                        ? "bg-warning"
-                        : "bg-stable";
-                  return (
-                    <div key={b.id} className="rounded-md border border-border bg-background/40">
-                      <button
-                        onClick={() => setExpandedBed(isOpen ? null : b.id)}
-                        className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
-                          <span className="text-xs font-semibold">{b.id}</span>
-                          <span className="truncate text-[11px] text-muted-foreground">
-                            {b.patient}
-                          </span>
-                        </div>
-                        <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
-                          {b.telemetryAvailable
-                            ? `${Math.round(b.currentMl)}/${b.totalMl} ml`
-                            : "Waiting"}
-                        </span>
-                      </button>
-                      {isOpen && (
-                        locked && !b.telemetryAvailable ? (
-                          <p className="border-t border-border px-2.5 py-2 text-[11px] text-muted-foreground">
-                            Waiting for telemetry from the IV pole.
-                          </p>
-                        ) : (
-                        <div className="space-y-2 border-t border-border px-2.5 py-2">
-                          <input
-                            type="range"
-                            min={0}
-                            max={b.totalMl}
-                            step={1}
-                            value={Math.round(b.currentMl)}
-                            onChange={(e) => onSetLevel(b.id, Number(e.target.value))}
-                            className="w-full accent-primary"
-                            aria-label={`${b.id} fluid level`}
-                          />
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min={0}
-                              max={b.totalMl}
-                              step={1}
-                              value={Math.round(b.currentMl)}
-                              onChange={(e) => onSetLevel(b.id, Number(e.target.value))}
-                              className="w-20 rounded border border-border bg-surface px-2 py-1 text-xs tabular-nums"
-                            />
-                            <span className="text-[11px] text-muted-foreground">ml</span>
-                            <div className="ml-auto flex gap-1">
-                              {[
-                                { label: "Full", v: b.totalMl },
-                                { label: "50%", v: b.totalMl * 0.5 },
-                                { label: "Warn", v: b.totalMl * 0.35 },
-                                { label: "Crit", v: b.totalMl * 0.15 },
-                              ].map((preset) => (
-                                <button
-                                  key={preset.label}
-                                  onClick={() => onSetLevel(b.id, preset.v)}
-                                  className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold hover:bg-secondary"
-                                >
-                                  {preset.label}
-                                </button>
-                              ))}
-                              <button
-                                onClick={() => onResetBed(b.id)}
-                                className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold hover:bg-secondary"
-                                title="Reset to initial value"
-                              >
-                                Reset
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                        )
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <button
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-lg hover:opacity-90"
-        >
-          <BellRing className="h-4 w-4" /> Simulation
-        </button>
-      )}
-    </div>
-  );
-}
-
-
 // ---------- Bed Detail Modal ----------
 
 function BedDetailModal({
   bed,
-  historyEnabled,
   onClose,
 }: {
   bed: EnrichedBed;
-  historyEnabled: boolean;
   onClose: () => void;
 }) {
-  // generate mock historical consumption: 30 mins, descending from a starting level toward current
-  const data = useMemo(() => {
-    if (!historyEnabled || !bed.telemetryAvailable) return [];
-    const points: { t: string; volume: number }[] = [];
-    const mlPerMin = bed.flowRate / 20;
-    let v = bed.currentMl + mlPerMin * 30;
-    v = Math.min(v, bed.totalMl);
-    for (let i = 30; i >= 0; i--) {
-      const jitter = (Math.random() - 0.5) * 4;
-      const value = Math.max(0, Math.min(bed.totalMl, v + jitter));
-      points.push({ t: `-${i}m`, volume: Number(value.toFixed(1)) });
-      v -= mlPerMin;
-    }
-    points[points.length - 1].volume = bed.currentMl;
-    return points;
-  }, [bed, historyEnabled]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -1442,43 +1100,11 @@ function BedDetailModal({
 
         <div className="px-5 pb-5 pt-3">
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            {historyEnabled ? "Fluid Consumption · Last 30 Minutes" : "Historical telemetry"}
+            Historical telemetry
           </p>
-          {!historyEnabled ? (
-            <div className="grid h-64 w-full place-items-center rounded-md border border-border bg-surface-elevated text-sm text-muted-foreground">
-              Historical readings are not available in Live Device mode.
-            </div>
-          ) : !bed.telemetryAvailable ? (
-            <div className="grid h-64 w-full place-items-center rounded-md border border-border bg-surface-elevated text-sm text-muted-foreground">
-              Waiting for telemetry.
-            </div>
-          ) : (
-          <div className="h-64 w-full rounded-md border border-border bg-surface-elevated p-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--stable)" stopOpacity={0.45} />
-                    <stop offset="100%" stopColor="var(--stable)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} stroke="var(--border)" />
-                <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} stroke="var(--border)" unit="ml" />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Area type="monotone" dataKey="volume" stroke="var(--stable)" strokeWidth={2} fill="url(#g)" />
-                <Line type="monotone" dataKey="volume" stroke="var(--stable)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="grid h-64 w-full place-items-center rounded-md border border-border bg-surface-elevated text-sm text-muted-foreground">
+            Historical readings are not available.
           </div>
-          )}
         </div>
       </div>
     </div>
