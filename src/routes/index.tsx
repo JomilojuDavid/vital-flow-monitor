@@ -71,7 +71,7 @@ type EnrichedBed = Bed & {
 
 // Single-bed deployment: one ESP32 smart IV pole is connected to the dashboard.
 const INITIAL_BEDS: Bed[] = [
-  { id: "BED 01", name: "BED 01", patient: "Adeyemi J.", ward: "Ward 3 · A", totalMl: 500, currentMl: 412, flowRate: 28, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
+  { id: "BED 01", name: "BED 01", patient: "Adeyemi J.", ward: "Ward 3 · A", totalMl: 0, currentMl: 0, flowRate: 0, fluidType: "0.9% Normal Saline", muted: false, ackCritical: false },
 ];
 
 // The one bed wired to a physical smart IV pole.
@@ -323,21 +323,27 @@ function Dashboard() {
   const enriched = useMemo(
     () =>
       beds.map((b) => {
-        const telemetryAvailable = liveState.recordedAt !== null;
-        const percent = telemetryAvailable ? (b.currentMl / b.totalMl) * 100 : 0;
+        const telemetryAvailable = liveFresh;
+        const currentMl = telemetryAvailable ? b.currentMl : 0;
+        const totalMl = telemetryAvailable ? b.totalMl : 0;
+        const flowRate = telemetryAvailable ? b.flowRate : 0;
+        const percent = telemetryAvailable && totalMl > 0 ? (currentMl / totalMl) * 100 : 0;
         const blocked =
           telemetryAvailable &&
           liveState.flowBlocked &&
           b.id === LIVE_BED_ID;
         return {
           ...b,
+          currentMl,
+          totalMl,
+          flowRate,
           percent,
           status: blocked ? ("critical" as Status) : telemetryAvailable ? getStatus(percent) : "stable",
           flowBlocked: blocked,
           telemetryAvailable,
         };
       }),
-    [beds, liveState.flowBlocked, liveState.recordedAt]
+    [beds, liveFresh, liveState.flowBlocked]
   );
 
   const openBed = openBedId ? enriched.find((b) => b.id === openBedId) ?? null : null;
@@ -862,7 +868,9 @@ function BedCard({
         ? "border-warning/60 shadow-[0_0_0_4px_color-mix(in_oklab,var(--warning)_15%,transparent)]"
         : "border-border";
   const barColor =
-    status === "critical"
+    !bed.telemetryAvailable
+      ? "bg-muted-foreground/30"
+      : status === "critical"
       ? "bg-critical"
       : status === "warning"
         ? "bg-warning"
@@ -900,11 +908,13 @@ function BedCard({
               className={`absolute bottom-0 left-0 right-0 ${barColor} transition-all duration-700 ${status === "critical" ? "animate-critical-flash" : ""}`}
               style={{ height: `${bed.telemetryAvailable ? percent : 0}%` }}
             >
-              <div className="absolute -top-1 left-0 right-0 h-2 animate-liquid-wave opacity-60">
-                <svg viewBox="0 0 100 10" preserveAspectRatio="none" className="h-full w-[120%]">
-                  <path d="M0 5 Q 25 0 50 5 T 100 5 V 10 H 0 Z" fill="currentColor" className="text-white/40" />
-                </svg>
-              </div>
+              {bed.telemetryAvailable && (
+                <div className="absolute -top-1 left-0 right-0 h-2 animate-liquid-wave opacity-60">
+                  <svg viewBox="0 0 100 10" preserveAspectRatio="none" className="h-full w-[120%]">
+                    <path d="M0 5 Q 25 0 50 5 T 100 5 V 10 H 0 Z" fill="currentColor" className="text-white/40" />
+                  </svg>
+                </div>
+              )}
             </div>
             {/* tick marks */}
             <div className="pointer-events-none absolute inset-y-1 right-0.5 flex flex-col justify-between">
@@ -914,26 +924,20 @@ function BedCard({
             </div>
           </div>
           <p className="pb-1.5 text-center text-[10px] font-semibold tabular-nums text-foreground">
-            {bed.telemetryAvailable
-              ? `${percent.toFixed(liveMode ? 2 : 0)}%`
-              : "—"}
+            {percent.toFixed(liveMode ? 2 : 0)}%
           </p>
         </button>
 
         <div className="grid grid-cols-2 gap-2">
           <Metric
             label="Current Vol"
-            value={
-              bed.telemetryAvailable
-                ? `${bed.currentMl.toFixed(liveMode ? 1 : 0)} ml`
-                : "Waiting"
-            }
-            sub={bed.telemetryAvailable ? `of ${bed.totalMl} ml` : "No telemetry"}
+            value={`${bed.currentMl.toFixed(liveMode ? 1 : 0)} ml`}
+            sub={`of ${bed.totalMl} ml`}
             icon={<Droplet className="h-3 w-3" />}
           />
           <Metric
             label="Flow Rate"
-            value={bed.telemetryAvailable ? `${bed.flowRate}` : "—"}
+            value={`${bed.flowRate}`}
             sub="gtts/min"
             icon={<Activity className="h-3 w-3" />}
           />
@@ -942,7 +946,7 @@ function BedCard({
             value={
               bed.telemetryAvailable
                 ? timeRemaining(bed.currentMl, bed.flowRate)
-                : "Waiting"
+                : "0 min"
             }
             sub="@ current rate"
             icon={<Clock className="h-3 w-3" />}
@@ -1092,10 +1096,10 @@ function BedDetailModal({
         </header>
 
         <div className="grid grid-cols-2 gap-3 px-5 pt-4 sm:grid-cols-4">
-          <MiniStat label="Remaining" value={bed.telemetryAvailable ? `${bed.currentMl.toFixed(0)} ml` : "Waiting"} />
-          <MiniStat label="Capacity" value={bed.telemetryAvailable ? `${bed.totalMl} ml` : "—"} />
-          <MiniStat label="Flow Rate" value={bed.telemetryAvailable ? `${bed.flowRate} gtts/min` : "—"} />
-          <MiniStat label="ETA Empty" value={bed.telemetryAvailable ? timeRemaining(bed.currentMl, bed.flowRate) : "—"} />
+          <MiniStat label="Remaining" value={`${bed.currentMl.toFixed(0)} ml`} />
+          <MiniStat label="Capacity" value={`${bed.totalMl} ml`} />
+          <MiniStat label="Flow Rate" value={`${bed.flowRate} gtts/min`} />
+          <MiniStat label="ETA Empty" value={bed.telemetryAvailable ? timeRemaining(bed.currentMl, bed.flowRate) : "0 min"} />
         </div>
 
         <div className="px-5 pb-5 pt-3">
@@ -1207,7 +1211,7 @@ function MonitoringView({
           <KpiCard
             icon={<Gauge className="h-4 w-4" />}
             label="Avg. Time to Refill"
-            value={avgRefill === null ? "—" : `${avgRefill} min`}
+            value={avgRefill === null ? "0 min" : `${avgRefill} min`}
             sub="Across all active beds"
             tone="default"
           />
